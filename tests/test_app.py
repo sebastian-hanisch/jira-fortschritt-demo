@@ -8,7 +8,6 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 import jira_constants as C
-from test_import import FakeJira
 
 APP_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "app.py")
 TIMEOUT = int(os.environ.get("APPTEST_TIMEOUT", "300"))  # unter Last (parallele Läufe) reichen 180 s nicht immer; Umgebungsvariable zum Anpassen
@@ -24,7 +23,7 @@ def _fresh_app() -> AppTest:
 
 def _ok(at, *context):
     assert not at.exception, (context, [str(e) for e in at.exception])
-    assert not [e for e in at.error if "Interne Prüfung" in e.value], (context, [e.value for e in at.error])
+    assert not [e for e in at.error if "Interne Prüfung" in e.value or "Unerwarteter Fehler" in e.value], (context, [e.value for e in at.error])
 
 
 def test_app_loads_without_exception_and_shows_the_headline_numbers():
@@ -125,52 +124,6 @@ def test_file_source_without_a_file_asks_for_one_and_stops():
     assert any("Bitte eine Datei wählen" in i.value for i in at.info) and not at.metric
 
 
-def test_api_source_empty_form_shows_a_validation_error_not_a_crash():
-    at = _fresh_app()
-    at.radio(key="source").set_value(C.SOURCE_API).run(timeout=TIMEOUT)
-    assert any("Noch nichts geladen" in i.value for i in at.info)
-    at.button(key="api_load").click().run(timeout=TIMEOUT)
-    _ok(at)
-    assert any("Adresse der Jira-Instanz" in e.value for e in at.error)
-
-
-def test_api_source_loads_tickets_with_a_faked_connection(monkeypatch):
-    import requests
-
-    fake = FakeJira(40)
-    monkeypatch.setattr(requests, "Session", lambda: fake)
-    at = _fresh_app()
-    at.radio(key="source").set_value(C.SOURCE_API).run(timeout=TIMEOUT)
-    at.text_input(key="api_url").set_value("https://firma.atlassian.net")
-    at.text_input(key="api_email").set_value("a@b.de")
-    at.text_input(key="api_token").set_value("SUPERTOKEN")
-    at.text_area(key="api_jql").set_value("project = P")
-    at.button(key="api_load").click().run(timeout=TIMEOUT)
-    _ok(at)
-    assert at.metric and any("40 Tickets" in c.value for c in at.caption)
-    assert fake.calls[0]["auth"] == ("a@b.de", "SUPERTOKEN")
-    page = " ".join(str(x.value) for x in at.markdown) + " ".join(str(c.value) for c in at.caption) + " ".join(e.value for e in at.error)
-    assert "SUPERTOKEN" not in page and "a@b.de" not in page and "SUPERTOKEN" not in str(at.query_params)
-
-
-def test_api_connection_error_is_reported_without_credentials(monkeypatch):
-    import requests
-
-    class Broken:
-        def get(self, *a, **k):
-            raise ConnectionError("geheim: SUPERTOKEN")
-
-    monkeypatch.setattr(requests, "Session", lambda: Broken())
-    at = _fresh_app()
-    at.radio(key="source").set_value(C.SOURCE_API).run(timeout=TIMEOUT)
-    at.text_input(key="api_url").set_value("https://firma.atlassian.net")
-    at.text_input(key="api_token").set_value("SUPERTOKEN")
-    at.text_area(key="api_jql").set_value("project = P")
-    at.button(key="api_load").click().run(timeout=TIMEOUT)
-    assert not at.exception
-    assert any("Verbindung zu Jira fehlgeschlagen" in e.value and "SUPERTOKEN" not in e.value for e in at.error)
-
-
 def test_custom_credits_change_the_result_and_the_scheme():
     base = _fresh_app()
     at = _fresh_app()
@@ -204,7 +157,7 @@ def test_the_custom_scheme_and_the_source_are_not_written_to_the_address_bar():
 def _upload(name, data, mime="text/csv"):
     at = _fresh_app()
     at.radio(key="source").set_value(C.SOURCE_FILE).run(timeout=TIMEOUT)
-    at.file_uploader(key="upload").set_value((name, data, mime)).run(timeout=TIMEOUT)
+    at.file_uploader(key="upload_0").set_value((name, data, mime)).run(timeout=TIMEOUT)
     return at
 
 
@@ -218,7 +171,7 @@ def test_uploaded_csv_gives_the_same_numbers_as_the_generated_sample():
     _ok(at)
     want = ev.analyse(sample, ev.Settings())
     assert at.metric[0].value == ev.pct(want.progress) and at.metric[2].value == ev.pct(want.progress_count)
-    assert not at.warning or not any("Spalte" in w.value for w in at.warning)
+    assert not any(w.value.startswith("Keine") for w in at.warning)          # keine Meldung über fehlende Spalten (die Upload-Warnung bleibt)
 
 
 def test_uploaded_csv_with_missing_columns_warns_instead_of_guessing():
@@ -281,3 +234,80 @@ def test_uploaded_project_without_resolution_dates_warns_in_the_month_tab():
     at = _upload("export.csv", b"Issue key,Status,Story Points\nA-1,Done,3\nA-2,To Do,2\n")
     _ok(at)
     assert any("kein lesbares Lösungsdatum" in w.value for w in at.warning)
+
+
+# ---------------------------------------------------------------- Werkzeug: Upload ohne Spuren, kein Zugang zu Jira
+
+def test_sources_are_only_sample_and_file():
+    at = _fresh_app()
+    assert list(at.radio(key="source").options) == [C.SOURCE_SAMPLE, C.SOURCE_FILE]
+
+
+def test_the_notice_and_both_example_downloads_are_shown_before_an_upload():
+    at = _fresh_app()
+    at.radio(key="source").set_value(C.SOURCE_FILE).run(timeout=TIMEOUT)
+    _ok(at)
+    assert any("Bitte vor dem Hochladen lesen" in w.value and "Streamlit Community Cloud" in w.value for w in at.warning)
+    labels = [d.proto.label for d in at.get("download_button")]
+    assert labels == ["⬇️ Beispiel als CSV", "⬇️ Beispiel als JSON"]
+
+
+def test_sample_source_offers_csv_and_json_examples():
+    at = _fresh_app()
+    labels = [d.proto.label for d in at.get("download_button")]
+    assert labels[:2] == ["⬇️ Beispiel als CSV", "⬇️ Beispiel als JSON"]
+
+
+def test_uploaded_json_example_gives_the_same_numbers_as_the_generated_sample():
+    import jira_evaluation as ev
+    import jira_import as J
+    from jira_scenario import make_sample
+
+    sample = make_sample(C.DEFAULT_N_EPICS, C.DEFAULT_SEED)
+    at = _upload("beispiel.json", J.to_json(sample), "application/json")
+    _ok(at)
+    want = ev.analyse(sample, ev.Settings())
+    assert at.metric[0].value == ev.pct(want.progress) and at.metric[2].value == ev.pct(want.progress_count)
+
+
+def test_assignee_names_are_replaced_by_default_and_can_be_kept():
+    import jira_import as J
+
+    raw = b"Issue key,Status,Story Points,Assignee\nA-1,Done,3,Maria Muster\nA-2,To Do,2,Max Beispiel\n"
+    at = _upload("export.csv", raw)
+    at.selectbox(key="dimension").set_value(C.DIM_ASSIGNEE).run(timeout=TIMEOUT)
+    _ok(at)
+    assert at.checkbox(key="pseudo").value is True and at.checkbox(key="pseudo").disabled      # gilt beim Laden, danach gesperrt
+    page = " ".join(str(x.value) for x in at.markdown) + " ".join(str(x.value) for x in at.caption) + " ".join(str(x.value) for x in at.info)
+    assert len(at.dataframe) >= 5
+    table_text = " ".join(t.value.to_string() for t in at.dataframe)
+    assert "Maria Muster" not in page + table_text and "Max Beispiel" not in page + table_text
+    assert "Person 1" in table_text or "Person 1" in page
+    at.button(key="clear_loaded").click().run(timeout=TIMEOUT)              # Daten löschen, Option ändern, erneut laden
+    at.checkbox(key="pseudo").set_value(False).run(timeout=TIMEOUT)
+    at.file_uploader(key="upload_2").set_value(("export.csv", raw, "text/csv")).run(timeout=TIMEOUT)
+    at.selectbox(key="dimension").set_value(C.DIM_ASSIGNEE).run(timeout=TIMEOUT)      # die Ansicht startet nach dem Löschen wieder mit den Standardwerten
+    _ok(at)
+    assert "Maria Muster" in " ".join(t.value.to_string() for t in at.dataframe)
+    assert J.pseudonymize_assignees(()) == ()
+
+
+def test_only_the_generated_sample_is_cached_never_uploaded_data():
+    """Datenschutz: st.cache_data hält Ergebnisse im Serverspeicher, auch sitzungsübergreifend. Gecacht werden darf nur die Erzeugung des Beispielprojekts."""
+    import ast
+
+    tree = ast.parse(open(APP_PATH, encoding="utf-8").read())
+    cached = [n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and any("cache" in ast.unparse(d) for d in n.decorator_list)]
+    assert cached == ["_sample"]
+    assert "cache_resource" not in open(APP_PATH, encoding="utf-8").read()
+
+
+def test_the_app_has_no_connection_to_jira_and_no_network_library():
+    import re
+    from pathlib import Path
+
+    root = Path(APP_PATH).parent
+    code = "\n".join(p.read_text(encoding="utf-8") for p in sorted(root.glob("*.py")))
+    assert not re.search(r"^\s*(import|from)\s+(requests|urllib|http|socket|httpx|aiohttp)(\.|\s|$)", code, re.M)
+    assert "requests" not in (root / "requirements.txt").read_text(encoding="utf-8")
+    assert not re.search(r"text_input\([^)]*(Token|Passwort|password)", code, re.I) and "type=\"password\"" not in code

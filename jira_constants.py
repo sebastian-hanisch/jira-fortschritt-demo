@@ -20,9 +20,8 @@ LABELS = ("tech-schuld", "ux", "sicherheit", "quick-win")
 ASSIGNEES = ("Person A", "Person B", "Person C", "Person D", "Person E")
 
 # --- Jira-Import ---------------------------------------------------------------------------------------------------------------------------
-MAX_IMPORT_ISSUES = 5000      # harte Obergrenze für API und Datei: alle Schritte sind O(n), das Diagramm-Budget ist darauf ausgelegt
-API_PAGE_SIZE = 100
-API_TIMEOUT_S = 30
+MAX_IMPORT_ISSUES = 5000      # harte Obergrenze für eine Datei: alle Schritte sind O(n), das Diagramm-Budget ist darauf ausgelegt
+MAX_UPLOAD_MB = 50            # Größe einer hochgeladenen Datei; gehört in .streamlit/config.toml als server.maxUploadSize (tests/test_app.py prüft die Übereinstimmung)
 DEFAULT_POINTS_FIELDS = "customfield_10016, customfield_10026"   # Kandidaten für das Story-Point-Feld; je Jira-Instanz verschieden
 DEFAULT_SPRINT_FIELD = "customfield_10020"
 DEFAULT_EPIC_LINK_FIELD = "customfield_10014"                    # nur für Projekte mit altem „Epic Link“; sonst genügt das Feld parent
@@ -56,8 +55,8 @@ DIM_NONE = "(keine zweite Ebene)"
 DIMENSIONS_2 = (DIM_NONE,) + DIMENSIONS[1:]
 DEFAULT_DIM, DEFAULT_DIM2 = DIM_EPIC, DIM_NONE
 
-SOURCE_SAMPLE, SOURCE_FILE, SOURCE_API = "Beispieldaten", "Datei (CSV oder JSON)", "Jira-API"
-SOURCES = (SOURCE_SAMPLE, SOURCE_FILE, SOURCE_API)
+SOURCE_SAMPLE, SOURCE_FILE = "Beispieldaten", "Datei (CSV oder JSON)"
+SOURCES = (SOURCE_SAMPLE, SOURCE_FILE)
 
 BURNUP_STEP_DAYS = 7
 

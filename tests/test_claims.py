@@ -86,5 +86,5 @@ def test_readme_numbers_with_a_percent_sign_are_all_covered_by_a_claim():
 
 
 def test_limits_stated_in_the_readme_match_the_constants():
-    assert C.MAX_IMPORT_ISSUES == 5000 and C.API_PAGE_SIZE == 100
+    assert C.MAX_IMPORT_ISSUES == 5000
     _in_readme("5000 Tickets")

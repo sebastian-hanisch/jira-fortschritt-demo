@@ -1,4 +1,4 @@
-"""Einlesen: CSV (englisch, deutsch, Semikolon, Vorgangs-IDs), JSON, REST-API mit echter Seitenlogik, Fehlerfälle und Rundlauf."""
+"""Einlesen: CSV (englisch, deutsch, Semikolon, Vorgangs-IDs), JSON (Antwort der REST-Suche), Fehlerfälle und Rundlauf. Es gibt keine API-Anbindung."""
 
 import datetime as dt
 import json
@@ -97,22 +97,22 @@ def _raw(key, **fields):
     return {"key": key, "fields": base}
 
 
-def test_issue_from_api_maps_all_fields():
-    issue = J.issue_from_api(_raw("P-1", parent={"key": "P-0"}), J.FieldIds())
+def test_issue_from_rest_maps_all_fields():
+    issue = J.issue_from_rest(_raw("P-1", parent={"key": "P-0"}), J.FieldIds())
     assert issue == Issue(key="P-1", summary="Titel P-1", type="Story", status="In Review", category="indeterminate", points=8.0, parent="P-0",
                           sprints=("Sprint 3",), components=("Backend",), labels=("x",), assignee="Person A", versions=("R1",), created=dt.date(2026, 10, 1))
 
 
-def test_issue_from_api_subtask_flag_epic_link_and_legacy_sprint_text():
-    sub = J.issue_from_api(_raw("P-2", issuetype={"name": "Teilaufgabe", "subtask": True}), J.FieldIds())
+def test_issue_from_rest_subtask_flag_epic_link_and_legacy_sprint_text():
+    sub = J.issue_from_rest(_raw("P-2", issuetype={"name": "Teilaufgabe", "subtask": True}), J.FieldIds())
     assert sub.is_subtask
-    legacy = J.issue_from_api(_raw("P-3", customfield_10014="P-0", customfield_10020=["com.atlassian.greenhopper.service.sprint.Sprint@1[id=7,name=Sprint 9,state=ACTIVE]"]), J.FieldIds())
+    legacy = J.issue_from_rest(_raw("P-3", customfield_10014="P-0", customfield_10020=["com.atlassian.greenhopper.service.sprint.Sprint@1[id=7,name=Sprint 9,state=ACTIVE]"]), J.FieldIds())
     assert legacy.parent == "P-0" and legacy.sprints == ("Sprint 9",)
 
 
 def test_points_field_candidates_take_the_first_present_one():
     fields = J.parse_field_ids("customfield_999, customfield_10026", "", "")
-    issue = J.issue_from_api(_raw("P-1", customfield_10026=3), fields)
+    issue = J.issue_from_rest(_raw("P-1", customfield_10026=3), fields)
     assert issue.points == 3.0 and fields.sprint == C.DEFAULT_SPRINT_FIELD and fields.epic_link == ""
 
 
@@ -126,9 +126,9 @@ def test_read_json_object_and_list_and_errors():
         J.read_json(b'{"foo": 1}')
 
 
-def test_issues_from_api_reports_missing_points_and_sprints():
+def test_issues_from_rest_reports_missing_points_and_sprints():
     raw = [_raw("P-1", customfield_10016=None, customfield_10020=None)]
-    _, report = J.issues_from_api(raw, J.FieldIds())
+    _, report = J.issues_from_rest(raw, J.FieldIds())
     assert "Kein Ticket hat Story Points" in report.notes[0] and "customfield_10016" in report.notes[0]
     assert "Kein Ticket hat einen Sprint" in report.notes[1]
 
@@ -139,102 +139,46 @@ def test_read_file_dispatches_by_extension_and_content():
     assert J.read_file("export.csv", b"Issue key,Status\nA-1,Done\n")[0][0].key == "A-1"
 
 
-# ---------------------------------------------------------------- API mit echter Seitenlogik
-
-class Response:
-    def __init__(self, status, payload):
-        self.status_code, self._payload = status, payload
-
-    def json(self):
-        return self._payload
+def test_roundtrip_sample_through_json_is_lossless():
+    for n, seed in ((2, 1), (6, 9), (12, 7)):
+        sample = make_sample(n, seed)
+        again, report = J.read_json(J.to_json(sample))
+        assert again == sample and report.notes == []
 
 
-class FakeJira:
-    """Hält sich an die Seitenlogik der echten Schnittstelle: Cloud über nextPageToken, Server über startAt und total. Respektiert maxResults;
-    ein Mock, der Seitenparameter ignoriert, ließe die Abbruchbedingung endlos laufen (DEMO-PLAYBOOK §5)."""
-
-    def __init__(self, total, status=200):
-        self.issues = [_raw(f"P-{n}") for n in range(1, total + 1)]
-        self.status, self.calls = status, []
-
-    def get(self, url, params=None, auth=None, headers=None, timeout=None):
-        self.calls.append({"url": url, "params": dict(params), "auth": auth, "headers": dict(headers), "timeout": timeout})
-        assert len(self.calls) < 100, "Seitenschleife endet nicht"
-        if self.status != 200:
-            return Response(self.status, {"errorMessages": ["Fehler im Test"]})
-        size = int(params["maxResults"])
-        if url.endswith("/rest/api/3/search/jql"):
-            start = int(params.get("nextPageToken", 0))
-            page = self.issues[start:start + size]
-            body = {"issues": page}
-            if start + size < len(self.issues):
-                body["nextPageToken"] = str(start + size)
-            else:
-                body["isLast"] = True
-            return Response(200, body)
-        start = int(params["startAt"])
-        return Response(200, {"issues": self.issues[start:start + size], "total": len(self.issues), "startAt": start})
+def test_json_example_has_the_rest_shape_a_user_can_recognize():
+    data = json.loads(J.to_json(make_sample(2, 1)))
+    first_story = next(i for i in data["issues"] if i["fields"]["issuetype"]["name"] == "Story")
+    f = first_story["fields"]
+    assert set(data) == {"issues"} and first_story["key"].startswith("DEMO-")
+    assert {"summary", "issuetype", "status", "customfield_10016", "customfield_10020", "components", "labels", "fixVersions", "created", "resolutiondate", "parent"} <= set(f)
+    assert f["status"]["statusCategory"]["key"] in ("new", "indeterminate", "done") and f["created"].endswith("T00:00:00.000+0000")
 
 
-def test_cloud_fetch_follows_next_page_token_until_the_end():
-    jira = FakeJira(250)
-    raw, truncated = J.fetch_issues("https://firma.atlassian.net/", J.CLOUD, "project = P", J.FieldIds(), jira, auth=("a@b.de", "tok"))
-    assert len(raw) == 250 and not truncated and len(jira.calls) == 3
-    first = jira.calls[0]
-    assert first["url"] == "https://firma.atlassian.net/rest/api/3/search/jql" and first["auth"] == ("a@b.de", "tok")
-    assert first["params"]["jql"] == "project = P" and "nextPageToken" not in first["params"] and "customfield_10016" in first["params"]["fields"]
-    assert jira.calls[1]["params"]["nextPageToken"] == "100"
+def test_json_export_uses_the_given_field_ids():
+    fields = J.parse_field_ids("customfield_777", "customfield_888", "")
+    issues = (Issue(key="A-1", points=3.0, sprints=("Sprint 1",)),)
+    data = json.loads(J.to_json(issues, fields))
+    assert data["issues"][0]["fields"]["customfield_777"] == 3.0 and data["issues"][0]["fields"]["customfield_888"] == [{"name": "Sprint 1"}]
+    assert J.read_json(J.to_json(issues, fields), fields)[0] == issues
 
 
-def test_server_fetch_uses_start_at_total_and_bearer_token():
-    jira = FakeJira(130)
-    raw, truncated = J.fetch_issues("https://jira.intern.example", J.SERVER, "project = P", J.FieldIds(), jira, token="pat")
-    assert len(raw) == 130 and not truncated and [c["params"]["startAt"] for c in jira.calls] == [0, 100]
-    assert jira.calls[0]["url"].endswith("/rest/api/2/search") and jira.calls[0]["headers"]["Authorization"] == "Bearer pat" and jira.calls[0]["auth"] is None
+def test_json_export_of_an_empty_list_and_missing_optional_values():
+    assert J.read_json(J.to_json(()))[0] == ()
+    bare = (Issue(key="A-1"),)
+    again, _ = J.read_json(J.to_json(bare))
+    assert again == bare
 
 
-def test_fetch_stops_at_the_limit_and_says_so():
-    for flavor in J.FLAVORS:
-        jira = FakeJira(250)
-        raw, truncated = J.fetch_issues("https://x.example", flavor, "project = P", J.FieldIds(), jira, token="t", max_issues=120)
-        assert len(raw) == 120 and truncated, flavor
-    raw, truncated = J.fetch_issues("https://x.example", J.CLOUD, "project = P", J.FieldIds(), FakeJira(120), max_issues=120)
-    assert len(raw) == 120 and not truncated                      # genau so viele wie die Grenze: nichts abgeschnitten
+def test_pseudonymize_assignees_numbers_by_name_independent_of_ticket_order():
+    issues = (Issue(key="1", assignee="Zoë Zeta"), Issue(key="2", assignee="Anna Alpha"), Issue(key="3", assignee=""), Issue(key="4", assignee="Zoë Zeta"))
+    out = J.pseudonymize_assignees(issues)
+    assert [i.assignee for i in out] == ["Person 2", "Person 1", "", "Person 2"]
+    assert [i.assignee for i in J.pseudonymize_assignees(issues[::-1])][::-1] == ["Person 2", "Person 1", "", "Person 2"]
+    assert all(a.key == b.key and a.status == b.status for a, b in zip(issues, out))
 
 
-def test_fetch_empty_result():
-    raw, truncated = J.fetch_issues("https://x.example", J.CLOUD, "project = P", J.FieldIds(), FakeJira(0))
-    assert raw == [] and not truncated
-
-
-@pytest.mark.parametrize("status", [401, 403])
-def test_fetch_login_errors_do_not_echo_the_credentials(status):
-    with pytest.raises(J.JiraImportError) as info:
-        J.fetch_issues("https://x.example", J.CLOUD, "project = P", J.FieldIds(), FakeJira(5, status), auth=("geheim@mail.de", "SUPERTOKEN"))
-    assert str(status) in str(info.value) and "SUPERTOKEN" not in str(info.value) and "geheim@mail.de" not in str(info.value)
-
-
-def test_fetch_other_http_errors_carry_the_server_message():
-    with pytest.raises(J.JiraImportError, match="HTTP 400: Fehler im Test"):
-        J.fetch_issues("https://x.example", J.CLOUD, "x", J.FieldIds(), FakeJira(5, 400))
-
-
-def test_base_url_and_jql_are_validated_before_anything_is_sent():
-    jira = FakeJira(5)
-    for bad in ("", "http://x.example", "ftp://x.example", "https://localhost", "firma.atlassian.net"):
-        with pytest.raises(J.JiraImportError):
-            J.fetch_issues(bad, J.CLOUD, "project = P", J.FieldIds(), jira, auth=("a", "b"))
-    with pytest.raises(J.JiraImportError, match="JQL"):
-        J.fetch_issues("https://x.example", J.CLOUD, "  ", J.FieldIds(), jira)
-    assert jira.calls == []
-    assert J.normalize_base_url("https://Firma.atlassian.net/jira/") == "https://Firma.atlassian.net"
-
-
-def test_server_keeps_a_context_path_cloud_drops_it():
-    assert J.normalize_base_url("https://jira.example.com/jira/", keep_path=True) == "https://jira.example.com/jira"
-    jira = FakeJira(3)
-    J.fetch_issues("https://jira.example.com/jira", J.SERVER, "project = P", J.FieldIds(), jira, token="t")
-    assert jira.calls[0]["url"] == "https://jira.example.com/jira/rest/api/2/search"
-    jira = FakeJira(3)
-    J.fetch_issues("https://firma.atlassian.net/jira/software", J.CLOUD, "project = P", J.FieldIds(), jira, auth=("a", "b"))
-    assert jira.calls[0]["url"] == "https://firma.atlassian.net/rest/api/3/search/jql"
+def test_pseudonymize_leaves_no_original_name_anywhere():
+    out = J.pseudonymize_assignees(make_sample(6, 9))
+    assert {i.assignee for i in out} <= {f"Person {k}" for k in range(1, 6)} | {""}
+    assert J.pseudonymize_assignees(()) == ()

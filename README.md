@@ -1,15 +1,15 @@
-# Jira-Fortschritt: gewichtet über Status, Story Points und Ebenen – Streamlit-Demo
+# Jira-Fortschritt: gewichtet über Status, Story Points und Ebenen – Streamlit-Werkzeug
 
-Fall-Demo für die Website „Sebastian Hanisch – Operations Research und Machine Learning“ (`demos.html`). Die App liest Tickets aus einer **Jira-Datei** (CSV-Export oder
-gespeicherte REST-Antwort) oder direkt über die **Jira-API** und rechnet daraus einen **gewichteten Projektfortschritt**: Jeder Status zählt mit einem wählbaren Anteil
+Werkzeug auf der Website „Sebastian Hanisch – Operations Research und Machine Learning“. Die App liest Tickets aus einer **Jira-Datei** (CSV-Export oder
+gespeicherte REST-Antwort als JSON) und rechnet daraus einen **gewichteten Projektfortschritt**: Jeder Status zählt mit einem wählbaren Anteil
 (To Do 0 %, in Arbeit 50 % oder eigene Werte, Done 100 %), jedes Ticket wiegt seine **Story Points** (oder 1), und das Ergebnis lässt sich über mehrere
 **Aggregationsebenen** zeigen: Gesamtprojekt, Epic, Sprint, Release, Komponente, Label, Bearbeiter, Ticket-Typ und Status, auf Wunsch zwei Ebenen als Kreuztabelle.
-Dazu kommen sechs **Tabellen** (je Gruppe, Status × Gruppe, Beitrag zum Fortschritt, Status-Übersicht, Erledigt je Monat, Datenqualität), jede als CSV ladbar. Ohne eigene Daten zeigt ein erzeugtes Beispielprojekt, wie es aussieht.
+Dazu kommen eine **Zusammenfassung zum Kopieren** (Markdown) und sechs **Tabellen** (je Gruppe, Status × Gruppe, Beitrag zum Fortschritt, Status-Übersicht, Erledigt je Monat, Datenqualität), jede als CSV ladbar. Ohne eigene Daten zeigt ein erzeugtes Beispielprojekt, wie es aussieht.
 
 ## Warum dieses Problem
 
 „Wie weit ist das Projekt?“ hat keine eindeutige Antwort. Zählt ein Ticket in Review schon halb, ganz oder gar nicht? Wiegt eine Story mit 13 Story Points so viel wie
-dreizehn mit einem Punkt? Und was ist mit Tickets ohne Schätzung? Jede Dashboard-Zahl beantwortet diese Fragen still mit. Die Demo macht die Antworten zu Reglern und
+dreizehn mit einem Punkt? Und was ist mit Tickets ohne Schätzung? Jede Dashboard-Zahl beantwortet diese Fragen still mit. Das Werkzeug macht die Antworten zu Reglern und
 fragt als **Kernfrage**: Wie stark hängt die Zahl von diesen Annahmen ab?
 
 ## Modell
@@ -28,8 +28,14 @@ Die drei festen Status-Schemata: **Nur Done** (0 % / 0 % / 100 %), **Linear** (0
 ## Methodik
 
 - **Einlesen.** CSV (englische und deutsche Spaltenköpfe, Komma oder Semikolon, Elternverweis als Schlüssel oder ID, mehrfach vorkommende Spalten für Sprint, Labels,
-  Komponenten), JSON (REST-Antwort) und die REST-API: Jira Cloud über `GET /rest/api/3/search/jql` mit Seitenmarke, Server/Data Center über `GET /rest/api/2/search`
-  mit `startAt`. Was beim Einlesen fehlt oder nicht lesbar ist, meldet die App vor der ersten Zahl. Höchstens 5000 Tickets.
+  Komponenten) und JSON (gespeicherte Antwort der Jira-REST-Suche mit einstellbaren Feld-IDs). Beispieldateien in beiden Formaten lassen sich in der App
+  herunterladen. Was beim Einlesen fehlt oder nicht lesbar ist, meldet die App vor der ersten Zahl. Höchstens 5000 Tickets.
+- **Datenschutz im Werkzeug.** Kein `st.cache_data` für hochgeladene Daten (nur das erzeugte Beispiel wird zwischengespeichert), keine Anbindung an die Jira-Schnittstelle und kein
+  Eingabefeld für Zugangsdaten, Obergrenzen für Dateigröße (50 MB, `server.maxUploadSize`) und Ticketzahl, Hinweis vor dem Hochladen, die Rohdatei wird nach dem Einlesen nicht gehalten
+  (neues Upload-Feld, Knopf „Daten jetzt löschen“), Titel (außer Epics) und Bearbeiternamen beim Laden verwerfbar, Fehlermeldungen nennen nur den Fehlertyp, und die Ausnahmemeldungen
+  stehen nicht im Protokoll der App (Streamlit schreibt sie sonst samt Meldung hinein, Versuch siehe Verifikation).
+- **Einlesen im Alltag.** Deutsche Datumsformate („19/Okt/26 15:45“, „19/Mär/26 3:45 nachm.“) werden gelesen; ein Erkennungsbericht zeigt, welche Spalte bzw. welches Feld wofür erkannt wurde
+  und bei wie vielen Tickets ein Wert steht.
 - **Aggregation.** Die Ebene ist ein Gruppenschlüssel je Ticket; Sub-Tasks erben Sprint, Komponente und Release vom übergeordneten Ticket, bei mehreren Sprints zählt der letzte.
   Die Summen laufen vektorisiert über `np.bincount`.
 - **Tabellen.** `jira_tables.py` baut aus der Auswertung reine Zeilen: Status × Gruppe (Gewicht, Tickets oder angerechnetes Gewicht je Zelle, mit Summen), Beitrag je Gruppe in Prozentpunkten (die Beiträge summieren sich zum Gesamtfortschritt), Gewicht und Anrechnung je Status, erledigtes Gewicht je Kalendermonat und acht Prüfungen der Eingangsdaten (ohne Story Points, ohne Epic, ohne Sprint, erledigt ohne Lösungsdatum, Lösungsdatum vor Erstelldatum, erledigte Story mit offenen Sub-Tasks, uneinheitliche Statuskategorie) samt Liste der ungeschätzten Tickets.
@@ -50,19 +56,23 @@ Das Beispielprojekt ist erzeugt (`jira_scenario.py`); die Zahlen zeigen den Mech
 | Was bringt die Sub-Task-Option? | Beim Workflow-Schema hebt sie das Standardprojekt von 54,4 % auf 56,4 % | `test_blend_lifts_the_workflow_scheme_on_the_default_project` |
 
 Dass „Linear“ über „nur Done“ liegt, folgt aus der Konstruktion (die Gutschriften sind nie kleiner); gemessen wird hier, **wie viel** das ausmacht. Welche der Zahlen die richtige ist,
-beantwortet die Demo nicht: Das hängt davon ab, was berichtet werden soll (Lieferstand, Arbeitsstand oder Restaufwand).
+beantwortet das Werkzeug nicht: Das hängt davon ab, was berichtet werden soll (Lieferstand, Arbeitsstand oder Restaufwand).
 
 ## Ehrliche Grenzen
 
 - **Die Status-Gewichte sind Annahmen, keine Messung.** Wer „In Review zählt 80 %“ begründen will, braucht die Historie des eigenen Teams.
-- **Die Beispielzahlen gelten für das erzeugte Beispiel.** In echten Projekten kann die Spanne kleiner oder größer sein; die Demo zeigt, wie man sie für das eigene Projekt bestimmt.
+- **Die Beispielzahlen gelten für das erzeugte Beispiel.** In echten Projekten kann die Spanne kleiner oder größer sein; das Werkzeug zeigt, wie man sie für das eigene Projekt bestimmt.
 - **Story Points sind teamintern.** Ein Gesamtwert über mehrere Teams mischt Maßstäbe.
 - **Ungeschätzte Tickets verschieben die Zahl**, je nach Regel in eine andere Richtung; die App meldet, wie viele betroffen sind.
 - **Der Verlauf kennt nur „erledigt“.** Eine Statushistorie (wann ging das Ticket in Review?) liegt in den gelesenen Feldern nicht vor.
-- **Die API-Anbindung ist nur gegen eine Nachbildung der Schnittstelle getestet**, nicht gegen eine echte Jira-Instanz. Feld-IDs für Story Points, Sprint und Epic-Link sind je Instanz
-  verschieden und einstellbar; bei Abweichungen meldet die App, welches Feld leer blieb.
-- **Zugangsdaten.** Sie gehen nur für die Sitzung an die angegebene https-Adresse und werden weder gespeichert noch geteilt. Auf einer öffentlich gehosteten App läuft das über den Server
-  der App; für echte Projektdaten besser lokal ausführen (siehe unten).
+- **Das JSON-Format ist nur gegen die Beispieldatei und nachgebaute Antworten getestet**, nicht gegen eine echte Jira-Instanz. Feld-IDs für Story Points, Sprint und Epic-Link sind je
+  Instanz verschieden und einstellbar; bei Abweichungen meldet die App, welches Feld leer blieb.
+- **Hochgeladene Dateien liegen für die Sitzung auf dem Server der Plattform** (Streamlit Community Cloud, USA), im Arbeitsspeicher. Das Werkzeug speichert und cached sie nicht,
+  behält nach dem Einlesen nur die berechnungsrelevanten Felder und verwirft auf Wunsch die Titel (außer Epics) und ersetzt die Namen der Bearbeiter durch Nummern. Das schützt Anzeige,
+  Tabellen und Zusammenfassung, aber die Datei hat den Server beim Hochladen schon erreicht, und die Plattform kann sie bis zum Sitzungsende im Speicher halten. Keine vertraulichen
+  Daten ohne Freigabe hochladen, Spalten wie Beschreibung und Kommentare vorher löschen; für sensible Projekte lokal ausführen (siehe unten).
+- **Das Datenschutz-Verhalten ist nur gegen die eigene Testsuite geprüft**, nicht gegen die Server der Plattform: Dass der Filter für Ausnahmemeldungen im Protokoll greift, zeigte ein Versuch
+  mit einer eigens fehlschlagenden App lokal; auf der Cloud selbst habe ich es nicht überprüft.
 
 ## Verifikation
 
@@ -70,14 +80,16 @@ beantwortet die Demo nicht: Das hängt davon ab, was berichtet werden soll (Lief
   (`tests/conftest.py`).
 - **Orakel:** `tests/test_oracle_jira_fortschritt.py` vergleicht den vektorisierten Kern in jeder Ebene gegen eine Schleifenfassung in exakter Bruchrechnung (`fractions`) auf erzeugten
   Projekten und prüft Eigenschaften: Skalierung der Story Points, Reihenfolge der Tickets, Monotonie der Gutschriften, Burn-up gegen direktes Zählen.
-- **Einlesen:** CSV (englisch, deutsch, Semikolon, cp1252, ID-Eltern, fehlende Spalten, unlesbare Werte), JSON, Rundlauf Beispiel → CSV → Beispiel; API mit einer Nachbildung, die die
-  Seitenlogik (Seitenmarke bzw. `startAt`, `maxResults`) wirklich umsetzt; Zugangsdaten dürfen in keiner Fehlermeldung vorkommen.
-- **Tabellen:** jede gegen Handrechnung an der Mini-Instanz, dazu Orakel in Bruchrechnung (Status × Gruppe in allen drei Kennzahlen, Beitrag, Status-Übersicht, Erledigt je Monat gegen direktes Zählen), Randfälle (leeres Projekt, kein Gewicht, Gewicht unter 1) und CSV-Format.
+- **Einlesen:** CSV (englisch, deutsch, Semikolon, cp1252, ID-Eltern, fehlende Spalten, unlesbare Werte), JSON (Felder, Feld-IDs, Sub-Task-Kennzeichen, alte Sprint-Schreibweise), Rundlauf Beispiel → CSV bzw. JSON → Beispiel in beiden Formaten, Umbenennung der Bearbeiter.
+- **Datenschutz:** Test, dass nur die Erzeugung des Beispielprojekts zwischengespeichert wird (`st.cache_data`), nie hochgeladene Daten, und dass weder eine Netzwerkbibliothek noch ein Eingabefeld für Zugangsdaten im Code steckt.
+- **Datenschutz:** der Filter für das Protokoll (Meldung ersetzt, Typ und Aufrufstationen bleiben), der Wächter (nur der Fehlertyp erscheint), der Upload-Lebenslauf, die Obergrenze in der
+  Serverkonfiguration; zusätzlich ein Versuch mit einer absichtlich fehlschlagenden App: ohne Filter steht die Meldung im Protokoll, mit Filter nicht.
+- **Tabellen und Zusammenfassung:** jede gegen Handrechnung an der Mini-Instanz, dazu Orakel in Bruchrechnung (Status × Gruppe in allen drei Kennzahlen, Beitrag, Status-Übersicht, Erledigt je Monat gegen direktes Zählen), Randfälle (leeres Projekt, kein Gewicht, Gewicht unter 1) und CSV-Format.
 - **Verdikte** als reine Funktionen an handgesetzten Werten (Schwellen inklusive, jede Zahl im Text); **Randfälle** (leeres Projekt, ein und zwei Tickets, alles ungeschätzt, Gewicht 0).
-- **Presets, Layout, Oberfläche:** AppTest-Rauchtest (jeder Button, jeder Regler am Minimum und Maximum, jede Option jeder Auswahl, Kombinationen der Ebenen, Datei- und API-Pfad, Eigene
+- **Presets, Layout, Oberfläche:** AppTest-Rauchtest (jeder Button, jeder Regler am Minimum und Maximum, jede Option jeder Auswahl, Kombinationen der Ebenen, Datei-Pfad mit CSV und JSON, Eigene
   Gewichte, Permalink), Schnellstart oben in der Seitenleiste mit hervorgehobenem aktivem Preset (`tests/test_layout.py`), Footer-Test, Laufzeit-Importe.
 - **Zahlen im README** stehen in `tests/test_claims.py`.
-- **Mutationstest:** Vollauf über alle Stellen von `jira_algorithm.py`, `jira_evaluation.py` und `jira_tables.py` (`tools/mutate_demo.py`, Stand `tests/mutation_state.json`): alle Mutanten gefangen bis auf einen äquivalenten (Toleranzgrenze der Ticketzählung in `check_consistency`, erst ab Millionen Tickets wirksam). Nicht gemutet: Einlesen, Beispielprojekt, Darstellung.
+- **Mutationstest:** Vollauf über alle Stellen von `jira_algorithm.py`, `jira_evaluation.py` und `jira_tables.py` (235 Stellen) (`tools/mutate_demo.py`, Stand `tests/mutation_state.json`): alle Mutanten gefangen bis auf drei äquivalente (Toleranzgrenze der Ticketzählung in `check_consistency`, erst ab Millionen Tickets wirksam; zwei Randvergleiche der Zusammenfassung bei genau 40 Gruppen, wo beide Zweige dasselbe liefern). Nicht gemutet: Einlesen, Beispielprojekt, Darstellung.
 - **Nicht gemacht:** ein Test gegen eine echte Jira-Instanz.
 
 ## Dateistruktur
@@ -91,9 +103,10 @@ beantwortet die Demo nicht: Das hängt davon ab, was berichtet werden soll (Lief
 | `jira_algorithm.py` | Kern: Gutschriften, Gewichte, Gruppierung, Aggregation, Burn-up, Flächenbaum |
 | `jira_constants.py` | Regler-Grenzen, Gewichte-Schemata, Farben, Presets |
 | `jira_evaluation.py` | `analyse`, Sensitivitätsprüfung, Verdikte, `check_consistency` |
-| `jira_import.py` | CSV, JSON und REST-API zu `Issue`; Beispiel-CSV |
+| `jira_import.py` | CSV und JSON zu `Issue`; Beispieldateien als CSV und JSON; Namen der Bearbeiter durch Nummern ersetzen |
 | `jira_layout.py` | Fester Kopf (Stylesheet) |
 | `jira_presets.py` | Permalink, Presets (Schnellstart in der Seitenleiste, aktives Preset hervorgehoben), Zufalls-Seed-Button |
+| `jira_privacy.py` | Filter, der Ausnahmemeldungen aus dem Protokoll der App entfernt (Typ und Aufrufstationen bleiben) |
 | `jira_rng.py` | SplitMix64 (Portfolio-Konvention für Zufall), wortgleich aus `ab-test-demo` |
 | `jira_tables.py` | Tabellen: Status × Gruppe, Beitrag, Status-Übersicht, Erledigt je Monat, Datenqualität, CSV-Format |
 | `jira_scenario.py` | Datenmodell `Issue` und erzeugtes Beispielprojekt |
@@ -104,14 +117,16 @@ beantwortet die Demo nicht: Das hängt davon ab, was berichtet werden soll (Lief
 
 ## Bewusst nicht umgesetzt
 
-- **Prognose** („wann ist das Projekt fertig?“): Das braucht ein Modell für Tempo und Umfangsänderungen und wäre eine eigene Demo.
-- **Statushistorie** (Changelog der API) für einen Burn-up mit Status-Gewichten: lässt sich nachrüsten, kostet aber einen Aufruf je Ticket.
+- **Prognose** („wann ist das Projekt fertig?“): Das braucht ein Modell für Tempo und Umfangsänderungen und wäre ein eigenes Werkzeug.
+- **Anbindung an die Jira-Schnittstelle:** bewusst entfernt (die erste Fassung hatte sie, Commit `09a66cb`). Zugangsdaten und Ticketdaten sollen nur als Datei durch eine öffentlich
+  gehostete App gehen, nie als Anmeldung an einer fremden Jira-Adresse.
+- **Statushistorie** (Changelog der Jira-Schnittstelle) für einen Burn-up mit Status-Gewichten: lässt sich nachrüsten, kostet aber einen Aufruf je Ticket.
 - **PDF-Export**: Alle Tabellen lassen sich als CSV laden.
-- **Speichern der Zugangsdaten** und Mehrfach-Projekt-Ansichten.
+- **Mehrfach-Projekt-Ansichten.**
 
 ## Lokal ausführen
 
-Für echte Projektdaten lokal ausführen, damit Tickets und Zugangsdaten den eigenen Rechner nicht verlassen (außer zur Jira-Adresse selbst). Python 3.12 oder neuer.
+Für echte Projektdaten lokal ausführen, damit Tickets den eigenen Rechner nicht verlassen. Python 3.12 oder neuer.
 
 ```bash
 python3 -m venv venv
@@ -128,7 +143,7 @@ pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
 
-Gebaut mit Streamlit, Plotly, NumPy und Requests.
+Gebaut mit Streamlit, Plotly und NumPy.
 
 ---
 

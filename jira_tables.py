@@ -8,12 +8,13 @@ import numpy as np
 
 import jira_algorithm as A
 import jira_constants as C
-from jira_evaluation import Analysis, status_list
+from jira_evaluation import Analysis, de, pct, status_list
 
 METRIC_WEIGHT, METRIC_COUNT, METRIC_CREDITED = "Gewicht", "Tickets", "Angerechnet"
 METRICS = (METRIC_WEIGHT, METRIC_COUNT, METRIC_CREDITED)
 SUM_LABEL = "Summe"
 MAX_LIST_ROWS = 200      # so viele Tickets nennt die Liste „ohne Story Points“ höchstens
+MAX_SUMMARY_ROWS = 40    # so viele Gruppen nennt die Zusammenfassung zum Kopieren höchstens
 
 
 def atom_statuses(issues, a: Analysis) -> list[str]:
@@ -177,3 +178,34 @@ def rows_to_csv(rows: list[dict]) -> bytes:
     header = list(rows[0])
     lines = [";".join(h.replace(";", ",") for h in header)] + [";".join(cell(r.get(h)) for h in header) for r in rows]
     return ("\n".join(lines) + "\n").encode("utf-8-sig")
+
+
+def _pct_or_dash(x) -> str:
+    return "–" if x is None or x != x else pct(x)
+
+
+def summary_markdown(issues, a: Analysis, unit: str, as_of: dt.date) -> str:
+    """Zusammenfassung als Markdown zum Kopieren (Confluence, Mail, Chat): Gesamtfortschritt in allen drei Maßen, Umfang, die Annahmen und die Gruppentabelle der gewählten
+    Ebene. Die Annahmen stehen immer dabei, damit die Zahl nicht ohne Kontext weitergegeben wird."""
+    s = a.settings
+    credits = ", ".join(f"{status} {round(100 * a.credits[status])} %" for status in atom_statuses(issues, a))
+    assumptions = [f"Status-Gewichte {credits}", f"Gewicht {s.weight_mode}"]
+    if s.weight_mode == C.WEIGHT_POINTS:
+        assumptions.append(f"ungeschätzte Tickets {s.unest_rule}")
+    assumptions += [f"Zählebene {s.count_level}", f"Sub-Task-Option {'an' if s.blend and s.count_level == C.LEVEL_STORIES else 'aus'}"]
+    lines = [
+        f"**Jira-Fortschritt** (Stand {as_of.strftime('%d.%m.%Y')})", "",
+        f"- Fortschritt (nach Status gewichtet): {_pct_or_dash(a.progress)}",
+        f"- Nur Done: {_pct_or_dash(a.progress_done)} nach Gewicht, {_pct_or_dash(a.progress_count)} nach Ticketzahl",
+        f"- Umfang: {a.n_atoms} Tickets ({a.n_unestimated} ohne Story Points), Gewicht {de(a.weight)} {unit}",
+        f"- Annahmen: {'; '.join(assumptions)}", ""]
+    rows = contribution(a)
+    if rows:
+        shown = rows if len(rows) - 1 <= MAX_SUMMARY_ROWS else rows[:MAX_SUMMARY_ROWS] + rows[-1:]       # Gruppen bis zur Obergrenze: alle samt Summenzeile
+        head = s.dimension if s.dimension != C.DIM_ALL else "Gruppe"
+        lines += [f"| {head} | Gewicht ({unit}) | Fortschritt | Offen ({unit}) |", "|---|---:|---:|---:|"]
+        for r in shown:
+            lines.append(f"| {str(r['Gruppe']).replace('|', '/')} | {de(r['Gewicht'])} | {_pct_or_dash(r['Fortschritt'])} | {de(r['Offenes Gewicht'])} |")
+        if len(rows) > len(shown):
+            lines += ["", f"(Gezeigt: die ersten {MAX_SUMMARY_ROWS} von {len(rows) - 1} Gruppen und die Summe.)"]
+    return "\n".join(lines) + "\n"

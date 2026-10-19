@@ -1,4 +1,6 @@
-"""Einlesen von Jira-Daten: CSV-Export, JSON (REST-Antwort) und die REST-API selbst. Alle Wege enden in derselben Liste von `Issue`.
+"""Einlesen von Jira-Daten aus Dateien: CSV-Export und JSON (gespeicherte REST-Antwort). Beide Wege enden in derselben Liste von `Issue`.
+
+Es gibt bewusst keine Anbindung an die Jira-Schnittstelle: Zugangsdaten und Ticketdaten sollen nur als Datei durch die App gehen.
 
 Der Kern kennt nur `Issue`; hier steht alles, was von Jira-Instanz zu Jira-Instanz verschieden ist (Spaltennamen, Feld-IDs, Datumsformate).
 Fehlendes wird nicht erraten, sondern im `ImportReport` gemeldet."""
@@ -9,7 +11,6 @@ import io
 import json
 import re
 from dataclasses import dataclass, field, replace
-from urllib.parse import urlparse
 
 import jira_constants as C
 from jira_algorithm import category_from_status_name, normalize_category
@@ -26,6 +27,31 @@ class ImportReport:
 
     issues: int = 0
     notes: list[str] = field(default_factory=list)
+    columns: list[dict] = field(default_factory=list)      # Erkennungsbericht: je Feld, wo es gefunden wurde und bei wie vielen Tickets ein Wert steht
+
+
+FIELD_LABELS = (
+    ("key", "Ticket-Schlüssel"), ("summary", "Titel"), ("type", "Ticket-Typ"), ("status", "Status"), ("category", "Statuskategorie"), ("points", "Story Points"),
+    ("parent", "Übergeordnetes Ticket"), ("sprint", "Sprint"), ("components", "Komponente"), ("labels", "Label"), ("assignee", "Bearbeiter"),
+    ("versions", "Release (Fix Version)"), ("created", "Erstellt"), ("resolved", "Gelöst"))
+NOT_FOUND = "nicht gefunden"
+
+
+def field_counts(issues) -> dict[str, int]:
+    """Bei wie vielen Tickets steht je Feld ein Wert (Story Points: eine Zahl, Eltern: ein Ticket, das im Bestand steht)."""
+    return {
+        "key": sum(bool(i.key) for i in issues), "summary": sum(bool(i.summary) for i in issues), "type": sum(bool(i.type) for i in issues),
+        "status": sum(bool(i.status) for i in issues), "category": len(issues), "points": sum(i.points is not None for i in issues),
+        "parent": sum(bool(i.parent) for i in issues), "sprint": sum(bool(i.sprints) for i in issues), "components": sum(bool(i.components) for i in issues),
+        "labels": sum(bool(i.labels) for i in issues), "assignee": sum(bool(i.assignee) for i in issues), "versions": sum(bool(i.versions) for i in issues),
+        "created": sum(i.created is not None for i in issues), "resolved": sum(i.resolved is not None for i in issues)}
+
+
+def coverage_rows(issues, found_in: dict[str, str]) -> list[dict]:
+    """Erkennungsbericht als Zeilen: Feld, Fundstelle (Spaltenkopf oder JSON-Feld) und Zahl der Tickets mit Wert. Ein Feld ohne Fundstelle steht als „nicht gefunden“."""
+    counts = field_counts(issues)
+    return [{"Feld": label, "Gefunden in": found_in.get(name, NOT_FOUND), "Tickets mit Wert": counts[name] if name in found_in else 0, "von": len(issues)}
+            for name, label in FIELD_LABELS]
 
 
 # ---------------------------------------------------------------- Hilfen
@@ -49,11 +75,25 @@ _DATE_FORMATS = ("%d/%b/%y %I:%M %p", "%d/%b/%Y %I:%M %p", "%d/%b/%y %H:%M", "%d
                  "%d.%m.%Y %H:%M", "%d.%m.%Y", "%Y-%m-%d", "%d/%m/%Y %H:%M", "%d/%m/%Y")
 
 
+_MONTHS_DE = {"jan": "Jan", "feb": "Feb", "mär": "Mar", "mar": "Mar", "mrz": "Mar", "apr": "Apr", "mai": "May", "jun": "Jun", "jul": "Jul", "aug": "Aug", "sep": "Sep",
+              "sept": "Sep", "okt": "Oct", "oct": "Oct", "nov": "Nov", "dez": "Dec", "dec": "Dec"}
+_DAY_MONTH_YEAR = re.compile(r"^(\d{1,2})/([A-Za-zäÄ]+)\.?/(\d{2,4})")
+
+
+def _english_month_and_meridiem(t: str) -> str:
+    """Jira mit deutscher Oberfläche schreibt „19/Okt/26 15:45“ oder „19/Mär/26 3:45 nachm.“: Monat auf den englischen Namen und vorm./nachm. auf AM/PM abbilden,
+    damit `strptime` (englische Namen) sie liest."""
+    m = _DAY_MONTH_YEAR.match(t)
+    if m and m.group(2).lower() in _MONTHS_DE:
+        t = f"{m.group(1)}/{_MONTHS_DE[m.group(2).lower()]}/{m.group(3)}" + t[m.end():]
+    return re.sub(r"\bvorm\.?", "AM", re.sub(r"\bnachm\.?", "PM", t, flags=re.I), flags=re.I)
+
+
 def parse_date(text) -> dt.date | None:
-    """Datum aus den üblichen Jira-Formaten (CSV-Export „19/Oct/26 3:45 PM“, ISO 8601 der API, deutsche Schreibweise); sonst None."""
+    """Datum aus den üblichen Jira-Formaten (CSV-Export „19/Oct/26 3:45 PM“ und deutsch „19/Okt/26 15:45“, ISO 8601 der API, deutsche Schreibweise 19.10.2026); sonst None."""
     if not text:
         return None
-    t = str(text).strip()
+    t = _english_month_and_meridiem(str(text).strip())
     if not t:
         return None
     iso = re.match(r"(\d{4})-(\d{2})-(\d{2})", t)
@@ -165,6 +205,10 @@ def read_csv(data: bytes, max_issues: int = C.MAX_IMPORT_ISSUES) -> tuple[tuple[
             versions=tuple(p for v in cell(row, "versions", False) for p in _split_list(v)), created=d_created, resolved=d_resolved))
     issues = _resolve_parents(issues, id_to_key)
     report.issues = len(issues)
+    found_in = {name: ", ".join(dict.fromkeys(rows[0][i].strip() for i in idx)) for name, idx in cols.items()}
+    if "category" not in cols:
+        found_in["category"] = "(aus dem Statusnamen geraten)"
+    report.columns = coverage_rows(issues, found_in)
     if "points" not in cols:
         report.notes.append("Keine Story-Point-Spalte gefunden: alle Tickets gelten als ungeschätzt (Gewichtung nach Ticketanzahl bleibt möglich).")
     if "category" not in cols:
@@ -195,7 +239,7 @@ def _resolve_parents(issues: list[Issue], id_to_key: dict[str, str]) -> list[Iss
     return out
 
 
-# ---------------------------------------------------------------- JSON und REST
+# ---------------------------------------------------------------- JSON (Antwort der REST-Suche)
 
 @dataclass(frozen=True)
 class FieldIds:
@@ -204,10 +248,6 @@ class FieldIds:
     points: tuple[str, ...] = tuple(s.strip() for s in C.DEFAULT_POINTS_FIELDS.split(","))
     sprint: str = C.DEFAULT_SPRINT_FIELD
     epic_link: str = C.DEFAULT_EPIC_LINK_FIELD
-
-    def requested(self) -> list[str]:
-        base = ["summary", "issuetype", "status", "parent", "labels", "components", "fixVersions", "assignee", "created", "resolutiondate"]
-        return base + [f for f in (*self.points, self.sprint, self.epic_link) if f]
 
 
 def parse_field_ids(points: str, sprint: str, epic_link: str) -> FieldIds:
@@ -229,8 +269,8 @@ def _sprint_names(value) -> tuple[str, ...]:
     return tuple(names)
 
 
-def issue_from_api(raw: dict, fields: FieldIds) -> Issue:
-    """Ein Ticket aus der REST-Antwort (Jira Cloud v3 oder Server/Data Center v2)."""
+def issue_from_rest(raw: dict, fields: FieldIds) -> Issue:
+    """Ein Ticket aus der Antwort der REST-Suche (Jira Cloud v3 oder Server/Data Center v2)."""
     f = raw.get("fields") or {}
     itype = f.get("issuetype") or {}
     status = f.get("status") or {}
@@ -248,9 +288,22 @@ def issue_from_api(raw: dict, fields: FieldIds) -> Issue:
         created=parse_date(f.get("created")), resolved=parse_date(f.get("resolutiondate")))
 
 
-def issues_from_api(raw_issues, fields: FieldIds) -> tuple[tuple[Issue, ...], ImportReport]:
-    issues = tuple(issue_from_api(r, fields) for r in raw_issues if r.get("key"))
+def issues_from_rest(raw_issues, fields: FieldIds) -> tuple[tuple[Issue, ...], ImportReport]:
+    issues = tuple(issue_from_rest(r, fields) for r in raw_issues if r.get("key"))
     report = ImportReport(issues=len(issues))
+    used = {r_field for r in raw_issues for r_field in (r.get("fields") or {})}
+    points_ids = [f for f in fields.points if f in used]
+    found_in = {"key": "key", "summary": "fields.summary", "type": "fields.issuetype", "status": "fields.status", "category": "fields.status.statusCategory",
+                "components": "fields.components", "labels": "fields.labels", "assignee": "fields.assignee", "versions": "fields.fixVersions",
+                "created": "fields.created", "resolved": "fields.resolutiondate"}
+    if points_ids:
+        found_in["points"] = ", ".join(f"fields.{f}" for f in points_ids)
+    if fields.sprint in used:
+        found_in["sprint"] = f"fields.{fields.sprint}"
+    parent_sources = [name for name, present in (("fields.parent", "parent" in used), (f"fields.{fields.epic_link}", bool(fields.epic_link) and fields.epic_link in used)) if present]
+    if parent_sources:
+        found_in["parent"] = ", ".join(parent_sources)
+    report.columns = coverage_rows(issues, found_in)
     if issues and all(i.points is None for i in issues):
         report.notes.append(
             f"Kein Ticket hat Story Points. Prüfen, ob das Feld {', '.join(fields.points)} in dieser Jira-Instanz das Story-Point-Feld ist "
@@ -271,7 +324,7 @@ def read_json(data: bytes, fields: FieldIds | None = None, max_issues: int = C.M
         raise JiraImportError("Erwartet wird eine Liste von Tickets oder ein Objekt mit dem Feld „issues“ (Antwort der Jira-REST-Suche).")
     if len(raw) > max_issues:
         raise JiraImportError(f"{len(raw)} Tickets sind mehr als die Obergrenze von {max_issues}.")
-    return issues_from_api(raw, fields or FieldIds())
+    return issues_from_rest(raw, fields or FieldIds())
 
 
 def read_file(name: str, data: bytes, fields: FieldIds | None = None) -> tuple[tuple[Issue, ...], ImportReport]:
@@ -280,82 +333,6 @@ def read_file(name: str, data: bytes, fields: FieldIds | None = None) -> tuple[t
     if name.lower().endswith(".json") or head[:1] in "{[":
         return read_json(data, fields)
     return read_csv(data)
-
-
-# ---------------------------------------------------------------- API
-
-CLOUD, SERVER = "Jira Cloud", "Jira Server / Data Center"
-FLAVORS = (CLOUD, SERVER)
-
-
-def normalize_base_url(url: str, keep_path: bool = False) -> str:
-    """Basisadresse ohne Schrägstrich am Ende; nur https. Der Pfad bleibt nur für Server/Data Center (Kontextpfad wie /jira), bei Cloud entfällt er. Alles andere
-    wird abgewiesen, bevor Zugangsdaten gesendet werden."""
-    u = (url or "").strip().rstrip("/")
-    if not u:
-        raise JiraImportError("Bitte die Adresse der Jira-Instanz eintragen, z. B. https://firma.atlassian.net.")
-    if not u.lower().startswith("https://"):
-        raise JiraImportError("Aus Sicherheitsgründen nur https:// -Adressen: Zugangsdaten gehen nicht unverschlüsselt über das Netz.")
-    parsed = urlparse(u)
-    if not parsed.hostname or "." not in parsed.hostname:
-        raise JiraImportError("Die Adresse ist kein gültiger Hostname.")
-    return f"https://{parsed.netloc}{parsed.path.rstrip('/') if keep_path else ''}"
-
-
-def fetch_issues(base_url: str, flavor: str, jql: str, fields: FieldIds, session, auth=None, token: str = "", max_issues: int = C.MAX_IMPORT_ISSUES,
-                 page_size: int = C.API_PAGE_SIZE) -> tuple[list[dict], bool]:
-    """Holt Tickets seitenweise. `session` hat `get(url, params=, auth=, headers=, timeout=)` wie `requests.Session`; `auth` = (E-Mail, API-Token) für Cloud,
-    `token` = persönliches Zugriffstoken für Server/Data Center. Rückgabe: (Tickets, abgeschnitten) – abgeschnitten, wenn die Obergrenze erreicht wurde, bevor Jira
-    weitere Tickets meldete.
-
-    Cloud: /rest/api/3/search/jql mit nextPageToken (die frühere Suche /rest/api/3/search ist entfernt); Felder müssen ausdrücklich angefragt werden.
-    Server: /rest/api/2/search mit startAt."""
-    base = normalize_base_url(base_url, keep_path=flavor == SERVER)
-    if not (jql or "").strip():
-        raise JiraImportError("Bitte eine JQL-Abfrage eintragen, z. B. project = ABC.")
-    headers = {"Accept": "application/json"}
-    if flavor == SERVER:
-        headers["Authorization"] = f"Bearer {token}"
-        http_auth = None
-    else:
-        http_auth = auth
-    out: list[dict] = []
-    token_next, start_at = None, 0
-    while True:
-        want = min(page_size, max_issues - len(out))
-        params = {"jql": jql, "fields": ",".join(fields.requested()), "maxResults": want}
-        if flavor == CLOUD:
-            url = f"{base}/rest/api/3/search/jql"
-            if token_next:
-                params["nextPageToken"] = token_next
-        else:
-            url = f"{base}/rest/api/2/search"
-            params["startAt"] = start_at
-        response = session.get(url, params=params, auth=http_auth, headers=headers, timeout=C.API_TIMEOUT_S)
-        if response.status_code in (401, 403):
-            raise JiraImportError(f"Jira lehnt die Anmeldung ab (HTTP {response.status_code}). E-Mail, API-Token bzw. Zugriffstoken und Berechtigungen prüfen.")
-        if response.status_code >= 400:
-            detail = ""
-            try:
-                body = response.json()
-                detail = "; ".join(body.get("errorMessages") or []) or str(body.get("message", ""))
-            except Exception:
-                pass
-            raise JiraImportError(f"Jira meldet HTTP {response.status_code}" + (f": {detail}" if detail else "") + ".")
-        payload = response.json()
-        page = payload.get("issues") or []
-        out.extend(page)
-        if len(out) >= max_issues:
-            more = bool(payload.get("nextPageToken")) if flavor == CLOUD else (start_at + len(page) < int(payload.get("total", 0)))
-            return out[:max_issues], more
-        if flavor == CLOUD:
-            token_next = payload.get("nextPageToken")
-            if not token_next or payload.get("isLast") or not page:
-                return out, False
-        else:
-            start_at += len(page)
-            if not page or start_at >= int(payload.get("total", 0)):
-                return out, False
 
 
 # ---------------------------------------------------------------- CSV-Export (Beispieldatei und Rundlauf-Gegenprobe)
@@ -380,3 +357,36 @@ def to_csv(issues) -> bytes:
                         + pad(i.sprints, k_sprint) + pad(i.components, k_comp) + pad(i.labels, k_label) + [i.assignee] + pad(i.versions, k_ver)
                         + [i.created.isoformat() if i.created else "", i.resolved.isoformat() if i.resolved else ""])
     return buffer.getvalue().encode("utf-8-sig")
+
+
+def to_json(issues, fields: FieldIds | None = None) -> bytes:
+    """Schreibt Tickets in der Form einer REST-Antwort (`{"issues": [{"key": ..., "fields": {...}}]}`) mit den Feld-IDs aus `fields`. Dient als Beispieldatei
+    zum Herunterladen und als Gegenprobe: `read_json(to_json(x))` liefert wieder `x`."""
+    ids = fields or FieldIds()
+    out = []
+    for i in issues:
+        stamp = lambda d: None if d is None else f"{d.isoformat()}T00:00:00.000+0000"  # noqa: E731
+        f = {
+            "summary": i.summary, "issuetype": {"name": i.type, "subtask": i.is_subtask},
+            "status": {"name": i.status, "statusCategory": {"key": i.category}},
+            ids.points[0]: i.points, ids.sprint: [{"name": n} for n in i.sprints], "components": [{"name": n} for n in i.components], "labels": list(i.labels),
+            "assignee": {"displayName": i.assignee} if i.assignee else None, "fixVersions": [{"name": n} for n in i.versions],
+            "created": stamp(i.created), "resolutiondate": stamp(i.resolved)}
+        if i.parent:
+            f["parent"] = {"key": i.parent}
+        out.append({"key": i.key, "fields": f})
+    return json.dumps({"issues": out}, ensure_ascii=False, indent=1).encode("utf-8")
+
+
+def drop_titles(issues, keep_epics: bool = True) -> tuple[Issue, ...]:
+    """Verwirft die Titel der Tickets (außer den der Epics, wenn `keep_epics`: sie benennen die Gruppen und stehen oft schon im Projektplan). Der Titel wird für keine
+    Rechnung gebraucht; Titel enthalten erfahrungsgemäß am ehesten Namen von Kunden und Personen."""
+    return tuple(i if (keep_epics and i.is_epic) else replace(i, summary="") for i in issues)
+
+
+def pseudonymize_assignees(issues) -> tuple[Issue, ...]:
+    """Ersetzt die Namen der Bearbeiter durch „Person 1“, „Person 2“ ... (nach Namen sortiert, also unabhängig von der Ticketreihenfolge). Ein leerer Name bleibt leer.
+    Das betrifft nur die Anzeige und die Tabellen der App; die hochgeladene Datei hat den Server da schon erreicht."""
+    names = sorted({i.assignee for i in issues if i.assignee})
+    number = {name: f"Person {k}" for k, name in enumerate(names, start=1)}
+    return tuple(replace(i, assignee=number.get(i.assignee, "")) for i in issues)
