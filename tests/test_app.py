@@ -245,3 +245,39 @@ def test_uploaded_json_response_is_read():
     at = _upload("antwort.json", json.dumps(raw).encode(), "application/json")
     _ok(at)
     assert at.metric[0].value == "50,0 %" and at.metric[1].value == "50,0 %"
+
+
+# ---------------------------------------------------------------- Tabellen
+
+def test_all_table_tabs_and_csv_downloads_are_there():
+    import jira_tables as T
+
+    at = _fresh_app()
+    _ok(at)
+    assert [t.label for t in at.tabs] == ["Je Gruppe", "Status × Gruppe", "Beitrag zum Fortschritt", "Status-Übersicht", "Erledigt je Monat", "Datenqualität"]
+    assert len(at.get("download_button")) >= 7                                     # Beispiel, sechs Tabellen, dazu die Liste ohne Story Points
+    assert at.radio(key="table_metric").value == T.METRIC_WEIGHT
+
+
+def test_every_table_metric_and_dimension_renders():
+    import jira_tables as T
+
+    for metric in T.METRICS:
+        for dim in (C.DIM_EPIC, C.DIM_COMPONENT, C.DIM_STATUS, C.DIM_ALL):
+            at = _fresh_app()
+            at.radio(key="table_metric").set_value(metric)
+            at.selectbox(key="dimension").set_value(dim).run(timeout=TIMEOUT)
+            _ok(at, metric, dim)
+
+
+def test_tables_on_the_subtask_level_with_no_weight_do_not_crash():
+    at = _fresh_app()
+    at.selectbox(key="unest_rule").set_value(C.UNEST_IGNORE)
+    at.selectbox(key="count_level").set_value(C.LEVEL_SUBTASKS).run(timeout=TIMEOUT)
+    _ok(at)
+
+
+def test_uploaded_project_without_resolution_dates_warns_in_the_month_tab():
+    at = _upload("export.csv", b"Issue key,Status,Story Points\nA-1,Done,3\nA-2,To Do,2\n")
+    _ok(at)
+    assert any("kein lesbares Lösungsdatum" in w.value for w in at.warning)

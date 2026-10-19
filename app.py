@@ -11,6 +11,7 @@ import streamlit as st
 import jira_algorithm as A
 import jira_constants as C
 import jira_import as J
+import jira_tables as T
 from jira_evaluation import (
     Settings,
     analyse,
@@ -35,6 +36,7 @@ from jira_presets import (
     sync_query_params,
 )
 from jira_scenario import make_sample
+from jira_tables import rows_to_csv
 from jira_visualization import build_burnup, build_heatmap, build_progress_bars, build_sensitivity, build_treemap
 
 st.set_page_config(page_title="Jira-Fortschritt – Sebastian Hanisch", layout="wide")
@@ -70,7 +72,7 @@ st.markdown(
     """
 Wie weit ist ein Projekt? Die Zahl hängt davon ab, **was zählt**: Ein Ticket in Review ist mehr als offen und weniger als erledigt, eine Story mit 13 **Story Points**
 wiegt mehr als eine mit 1, und ein Bericht über das ganze Projekt sieht anders aus als einer je **Epic**, Sprint oder Komponente. Diese Demo liest Tickets aus einer
-**Jira-Datei** oder direkt über die **Jira-API**, rechnet den Fortschritt mit frei wählbaren **Status-Gewichten** und zeigt ihn über mehrere **Aggregationsebenen**.
+**Jira-Datei** oder direkt über die **Jira-API**, rechnet den Fortschritt mit frei wählbaren **Status-Gewichten** und zeigt ihn über mehrere **Aggregationsebenen**, auch als **Tabellen** (z. B. nach Status aufgesplittet).
 
 Unten: die **Kernfrage** (wie stark hängt die Zahl von den Annahmen ab?) und die Expander **🔧 Datenquellen und Jira-Felder**, **📐 Mathematische Formulierung** und
 **🚧 Wo die Annahmen enden**.
@@ -262,17 +264,59 @@ if len(grid) >= 2:
 else:
     st.info("Für den Verlauf fehlen Erstell- und Lösungsdaten.")
 
-st.markdown("### 📋 Zahlen je Gruppe")
-table = [
-    {dimension: lbl, f"Gewicht ({unit})": round(float(w), 2), "Fortschritt": None if p != p else round(float(p), 4), "Nur Done (Gewicht)": None if d != d else round(float(d), 4),
-     "Tickets": round(float(n), 2), "ohne Story Points": round(float(u), 2)}
-    for lbl, w, p, d, n, u in zip(a.stats.labels, a.stats.weight, a.stats.progress, a.stats.progress_done, a.stats.count, a.stats.unestimated)
-]
-st.dataframe(table, hide_index=True, width="stretch", column_config={"Fortschritt": st.column_config.NumberColumn(format="percent"),
-                                                                       "Nur Done (Gewicht)": st.column_config.NumberColumn(format="percent")})
-csv_lines = [";".join([dimension, f"Gewicht ({unit})", "Fortschritt", "Nur Done (Gewicht)", "Tickets", "ohne Story Points"])] + [
-    ";".join(["" if v is None else (str(v).replace(".", ",") if isinstance(v, float) else str(v).replace(";", ",")) for v in row.values()]) for row in table]
-st.download_button("⬇️ Tabelle als CSV", ("\n".join(csv_lines) + "\n").encode("utf-8-sig"), file_name="fortschritt-je-gruppe.csv", mime="text/csv", key="table_csv")
+st.markdown("## 📋 Tabellen")
+st.caption("Alle Tabellen folgen den Einstellungen links und der gewählten Ebene; jede lässt sich als CSV für Excel laden (Semikolon, Dezimalkomma).")
+
+
+def show_table(rows, key, formats=None, file_name="tabelle"):
+    """Zeigt Zeilen (Wörterbücher) als Tabelle und bietet sie als CSV an. `formats`: Spalte -> Streamlit-Zahlenformat."""
+    if not rows:
+        st.info("Keine Daten für diese Tabelle.")
+        return
+    config = {name: st.column_config.NumberColumn(format=fmt) for name, fmt in (formats or {}).items() if name in rows[0]}
+    if "Wirkung" in rows[0]:
+        config["Wirkung"] = st.column_config.TextColumn(width="large")
+    st.dataframe(rows, hide_index=True, width="stretch", column_config=config, key=f"df_{key}")
+    st.download_button("⬇️ Als CSV", rows_to_csv(rows), file_name=f"{file_name}.csv", mime="text/csv", key=f"csv_{key}")
+
+
+tab_group, tab_status, tab_contrib, tab_overview, tab_month, tab_quality = st.tabs(
+    ["Je Gruppe", "Status × Gruppe", "Beitrag zum Fortschritt", "Status-Übersicht", "Erledigt je Monat", "Datenqualität"])
+with tab_group:
+    group_rows = [
+        {dimension: lbl, f"Gewicht ({unit})": float(w), "Fortschritt": None if p != p else float(p), "Nur Done (Gewicht)": None if d != d else float(d),
+         "Tickets": float(n), "ohne Story Points": float(u)}
+        for lbl, w, p, d, n, u in zip(a.stats.labels, a.stats.weight, a.stats.progress, a.stats.progress_done, a.stats.count, a.stats.unestimated)]
+    show_table(group_rows, "group", {f"Gewicht ({unit})": "%.1f", "Fortschritt": "percent", "Nur Done (Gewicht)": "percent", "Tickets": "%.1f", "ohne Story Points": "%.1f"},
+               "fortschritt-je-gruppe")
+with tab_status:
+    st.caption(f"Wie verteilt sich jede Gruppe der Ebene „{dimension}“ auf die Status? Tickets mit mehreren Werten zählen anteilig.")
+    metric = st.radio("Kennzahl je Zelle", T.METRICS, key="table_metric", horizontal=True,
+                      help="Gewicht = Story Points (bzw. 1 je Ticket), Tickets = Anzahl, Angerechnet = Gewicht mal Gutschrift des Status.")
+    status_rows = T.status_by_group(issues, a, metric)
+    status_names = T.atom_statuses(issues, a)
+    show_table(status_rows, "status", {**{name: "%.1f" for name in (*status_names, T.SUM_LABEL)}, "Fortschritt": "percent"}, "status-je-gruppe")
+with tab_contrib:
+    st.caption("Wer treibt die Zahl? Der Beitrag einer Gruppe ist ihr angerechnetes Gewicht geteilt durch das Gesamtgewicht, in Prozentpunkten; die Beiträge summieren sich zum Gesamtfortschritt. "
+               "Das offene Gewicht zeigt, wo noch am meisten Arbeit steckt.")
+    show_table(T.contribution(a), "contrib", {"Gewicht": "%.1f", "Anteil am Gewicht": "percent", "Fortschritt": "percent", "Beitrag (Punkte)": "%.1f", "Offenes Gewicht": "%.1f",
+                                              "Anteil am Offenen": "percent"}, "beitrag-zum-fortschritt")
+with tab_overview:
+    st.caption("Was hinter den Status-Gewichten steckt: Wie viel Gewicht liegt in welchem Status, und wie viel davon wird angerechnet?")
+    show_table(T.status_overview(issues, a), "overview", {"Gewicht": "%.1f", "Status-Gewicht (%)": "%.0f", "Angerechnet": "%.1f", "Anteil am Angerechneten": "percent"}, "status-uebersicht")
+with tab_month:
+    month_rows, month_missing = T.done_by_month(issues, a)
+    st.caption("Erledigtes Gewicht nach Monat des Lösungsdatums, lückenlos von der ersten bis zur letzten Lösung. Daran lässt sich das bisherige Tempo ablesen; eine Prognose daraus macht die Demo nicht.")
+    show_table(month_rows, "month", {"Gewicht erledigt": "%.1f", "Gewicht kumuliert": "%.1f"}, "erledigt-je-monat")
+    if month_missing:
+        st.warning(f"{month_missing} erledigte Tickets haben kein lesbares Lösungsdatum und fehlen in dieser Tabelle.")
+with tab_quality:
+    st.caption("Prüfungen der Eingangsdaten: Was davon die Zahl verzerren kann und wie die App damit umgeht.")
+    show_table(T.data_quality(issues, a), "quality", {"Anteil an den Tickets": "percent"}, "datenqualitaet")
+    unest_rows, unest_total = T.unestimated_tickets(issues, a)
+    if unest_total:
+        st.markdown(f"**Tickets ohne Story Points** ({unest_total}" + (f", gezeigt die ersten {len(unest_rows)}" if unest_total > len(unest_rows) else "") + ")")
+        show_table(unest_rows, "unest", None, "ohne-story-points")
 
 st.markdown("---")
 

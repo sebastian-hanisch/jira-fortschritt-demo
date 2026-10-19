@@ -71,9 +71,8 @@ def o_labels(by_key, issue, dim):
     return [issue.status]
 
 
-def oracle(issues, s: ev.Settings):
-    """{Gruppe: (Gewicht, Gutschrift, Anzahl)} als Brüche, plus (Gesamtgewicht, Gesamtgutschrift)."""
-    by_key = {i.key: i for i in issues}
+def oracle_atoms(issues, s: ev.Settings):
+    """Liste (Ticket, Gewicht, Gutschrift) der Atome als Brüche."""
     if s.count_level == C.LEVEL_SUBTASKS:
         atoms = [i for i in issues if i.is_subtask]
     else:
@@ -102,10 +101,16 @@ def oracle(issues, s: ev.Settings):
         mean = sum(v * o_credit(s.scheme, j.status, j.category, s.custom) for v, j in zip(vs, subs)) / sum(vs)
         return max(own, mean)
 
+    return [(i, weight(i), credit(i)) for i in atoms]
+
+
+def oracle(issues, s: ev.Settings):
+    """{Gruppe: (Gewicht, Gutschrift, Anzahl)} als Brüche, plus (Gesamtgewicht, Gesamtgutschrift)."""
+    by_key = {i.key: i for i in issues}
+    atoms = oracle_atoms(issues, s)
     groups = {}
     total_w = total_c = F(0)
-    for i in atoms:
-        w, c = weight(i), credit(i)
+    for i, w, c in atoms:
         total_w += w
         total_c += w * c
         labels = o_labels(by_key, i, s.dimension)
@@ -249,3 +254,64 @@ def test_burn_up_matches_a_direct_count_per_date():
         assert sc == pytest.approx(want_scope) and fi == pytest.approx(want_done), day
     last = max([i.created for i in atoms if i.created] + [i.resolved for i in atoms if i.resolved] + [today])
     assert grid[0] == first and grid[-1] == last and isinstance(grid[0], dt.date)
+
+
+# ---------------------------------------------------------------- Tabellen
+
+@pytest.mark.parametrize("seed", range(8))
+def test_status_by_group_matches_the_exact_oracle(seed):
+    import jira_tables as T
+    issues = make_sample(2 + seed % 3, seed)
+    rng = SplitMix64(seed + 500)
+    by_key = {i.key: i for i in issues}
+    for dim in (C.DIM_EPIC, C.DIM_SPRINT, C.DIM_COMPONENT, C.DIM_LABEL, C.DIM_STATUS):
+        s = _settings(rng, dim)
+        a = ev.analyse(issues, s)
+        cells = {}
+        for issue, w, c in oracle_atoms(issues, s):
+            labels = o_labels(by_key, issue, dim)
+            for label in labels:
+                for metric, value in ((T.METRIC_WEIGHT, w), (T.METRIC_COUNT, F(1)), (T.METRIC_CREDITED, w * c)):
+                    cells[(metric, label, issue.status)] = cells.get((metric, label, issue.status), F(0)) + value / len(labels)
+        for metric in T.METRICS:
+            rows = T.status_by_group(issues, a, metric)
+            statuses = T.atom_statuses(issues, a)
+            for row in rows[:-1]:
+                for status in statuses:
+                    assert row[status] == pytest.approx(float(cells.get((metric, row["Gruppe"], status), 0)), rel=1e-9, abs=1e-12), (seed, dim, metric, row["Gruppe"], status)
+            for status in statuses:                                    # Summenzeile = Summe über alle Gruppen
+                assert rows[-1][status] == pytest.approx(sum(float(v) for (m, _, st), v in cells.items() if m == metric and st == status), rel=1e-9, abs=1e-12)
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_status_overview_and_contribution_match_the_exact_oracle(seed):
+    import jira_tables as T
+    issues = make_sample(3, seed)
+    s = ev.Settings(scheme=C.SCHEME_WORKFLOW, blend=bool(seed % 2), dimension=C.DIM_EPIC)
+    a = ev.analyse(issues, s)
+    atoms = oracle_atoms(issues, s)
+    total_w, total_c = sum(w for _, w, _ in atoms), sum(w * c for _, w, c in atoms)
+    for row in T.status_overview(issues, a)[:-1]:
+        mine = [(w, c) for i, w, c in atoms if i.status == row["Status"]]
+        assert row["Tickets"] == len(mine) and row["Gewicht"] == pytest.approx(float(sum(w for w, _ in mine)))
+        assert row["Angerechnet"] == pytest.approx(float(sum(w * c for w, c in mine)), rel=1e-9, abs=1e-12)
+    rows = T.contribution(a)
+    assert rows[-1]["Beitrag (Punkte)"] == pytest.approx(float(100 * total_c / total_w), rel=1e-9)
+    assert sum(r["Beitrag (Punkte)"] for r in rows[:-1]) == pytest.approx(float(100 * total_c / total_w), rel=1e-9)
+    assert sum(r["Anteil am Offenen"] for r in rows[:-1]) == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize("seed", range(8))
+def test_done_by_month_matches_a_direct_count(seed):
+    import jira_tables as T
+    issues = make_sample(4, seed)
+    a = ev.analyse(issues, ev.Settings())
+    rows, missing = T.done_by_month(issues, a)
+    atoms = oracle_atoms(issues, ev.Settings())
+    done = [(i, w) for i, w, _ in atoms if i.category == "done"]
+    assert missing == sum(i.resolved is None for i, _ in done)
+    for row in rows:
+        year, month = (int(x) for x in row["Monat"].split("-"))
+        mine = [w for i, w in done if i.resolved and (i.resolved.year, i.resolved.month) == (year, month)]
+        assert row["Tickets erledigt"] == len(mine) and row["Gewicht erledigt"] == pytest.approx(float(sum(mine)))
+    assert rows[-1]["Gewicht kumuliert"] == pytest.approx(float(sum(w for i, w in done if i.resolved)))

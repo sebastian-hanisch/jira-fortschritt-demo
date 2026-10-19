@@ -35,6 +35,11 @@ class Analysis:
     cross: A.GroupStats | None
     hierarchy: A.Hierarchy
     burn: tuple
+    atoms: tuple[int, ...]      # Indizes der Atome in der Ticketliste (Grundlage der Tabellen)
+    w: np.ndarray               # Gewicht je Atom
+    c: np.ndarray               # Gutschrift je Atom
+    done: np.ndarray            # Statuskategorie Done je Atom
+    assign: A.Assignment        # Zuordnung der Atome zur ersten Ebene
 
 
 def de(x: float, digits: int = 1, sign: bool = False) -> str:
@@ -72,7 +77,7 @@ def analyse(issues, settings: Settings, today: dt.date = C.SAMPLE_TODAY) -> Anal
         second = A.assign_groups(issues, atoms, settings.dimension2)
         cross = A.aggregate(A.cross_assignment(first, second), w, c, done, unest)
     return Analysis(settings, credit_of, len(atoms), float(w.sum()), p_w, p_d, p_n, int(unest.sum()), stats, cross,
-                    A.hierarchy(issues, atoms, w, c), A.burn_up(issues, atoms, w, done, today))
+                    A.hierarchy(issues, atoms, w, c), A.burn_up(issues, atoms, w, done, today), tuple(atoms), w, c, done, first)
 
 
 def sensitivity(issues, settings: Settings) -> list[dict]:
@@ -154,4 +159,6 @@ def check_consistency(a: Analysis, tol: float = 1e-9) -> list[str]:
             problems.append(f"{name}: Gruppengewichte summieren sich zu {float(st_.weight.sum()):.6f}, erwartet {a.weight:.6f}")
         if abs(float(st_.count.sum()) - a.n_atoms) > tol * max(1, a.n_atoms):
             problems.append(f"{name}: Gruppen zählen {float(st_.count.sum()):.6f} Tickets, erwartet {a.n_atoms}")
+    if a.weight > 0 and abs(float(a.stats.credited.sum()) / a.weight - a.progress) > tol:
+        problems.append(f"Die Beiträge der Gruppen summieren sich zu {float(a.stats.credited.sum()) / a.weight:.6f}, der Gesamtfortschritt ist {a.progress:.6f}")
     return problems

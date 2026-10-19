@@ -4,7 +4,7 @@ Fall-Demo für die Website „Sebastian Hanisch – Operations Research und Mach
 gespeicherte REST-Antwort) oder direkt über die **Jira-API** und rechnet daraus einen **gewichteten Projektfortschritt**: Jeder Status zählt mit einem wählbaren Anteil
 (To Do 0 %, in Arbeit 50 % oder eigene Werte, Done 100 %), jedes Ticket wiegt seine **Story Points** (oder 1), und das Ergebnis lässt sich über mehrere
 **Aggregationsebenen** zeigen: Gesamtprojekt, Epic, Sprint, Release, Komponente, Label, Bearbeiter, Ticket-Typ und Status, auf Wunsch zwei Ebenen als Kreuztabelle.
-Ohne eigene Daten zeigt ein erzeugtes Beispielprojekt, wie es aussieht.
+Dazu kommen sechs **Tabellen** (je Gruppe, Status × Gruppe, Beitrag zum Fortschritt, Status-Übersicht, Erledigt je Monat, Datenqualität), jede als CSV ladbar. Ohne eigene Daten zeigt ein erzeugtes Beispielprojekt, wie es aussieht.
 
 ## Warum dieses Problem
 
@@ -32,8 +32,9 @@ Die drei festen Status-Schemata: **Nur Done** (0 % / 0 % / 100 %), **Linear** (0
   mit `startAt`. Was beim Einlesen fehlt oder nicht lesbar ist, meldet die App vor der ersten Zahl. Höchstens 5000 Tickets.
 - **Aggregation.** Die Ebene ist ein Gruppenschlüssel je Ticket; Sub-Tasks erben Sprint, Komponente und Release vom übergeordneten Ticket, bei mehreren Sprints zählt der letzte.
   Die Summen laufen vektorisiert über `np.bincount`.
+- **Tabellen.** `jira_tables.py` baut aus der Auswertung reine Zeilen: Status × Gruppe (Gewicht, Tickets oder angerechnetes Gewicht je Zelle, mit Summen), Beitrag je Gruppe in Prozentpunkten (die Beiträge summieren sich zum Gesamtfortschritt), Gewicht und Anrechnung je Status, erledigtes Gewicht je Kalendermonat und acht Prüfungen der Eingangsdaten (ohne Story Points, ohne Epic, ohne Sprint, erledigt ohne Lösungsdatum, Lösungsdatum vor Erstelldatum, erledigte Story mit offenen Sub-Tasks, uneinheitliche Statuskategorie) samt Liste der ungeschätzten Tickets.
 - **Prüfung in der App.** `check_consistency` prüft bei jedem Lauf, dass Gruppengewichte und Ticketzahlen sich zum Gesamtwert summieren und kein Fortschritt außerhalb von 0 bis 100 %
-  liegt; bei Verletzung zeigt die App einen Fehler statt einer stillen falschen Zahl.
+  liegt und die Beiträge der Gruppen den Gesamtfortschritt ergeben; bei Verletzung zeigt die App einen Fehler statt einer stillen falschen Zahl.
 
 ## Befunde (gemessen, keine Behauptungen)
 
@@ -71,11 +72,12 @@ beantwortet die Demo nicht: Das hängt davon ab, was berichtet werden soll (Lief
   Projekten und prüft Eigenschaften: Skalierung der Story Points, Reihenfolge der Tickets, Monotonie der Gutschriften, Burn-up gegen direktes Zählen.
 - **Einlesen:** CSV (englisch, deutsch, Semikolon, cp1252, ID-Eltern, fehlende Spalten, unlesbare Werte), JSON, Rundlauf Beispiel → CSV → Beispiel; API mit einer Nachbildung, die die
   Seitenlogik (Seitenmarke bzw. `startAt`, `maxResults`) wirklich umsetzt; Zugangsdaten dürfen in keiner Fehlermeldung vorkommen.
+- **Tabellen:** jede gegen Handrechnung an der Mini-Instanz, dazu Orakel in Bruchrechnung (Status × Gruppe in allen drei Kennzahlen, Beitrag, Status-Übersicht, Erledigt je Monat gegen direktes Zählen), Randfälle (leeres Projekt, kein Gewicht, Gewicht unter 1) und CSV-Format.
 - **Verdikte** als reine Funktionen an handgesetzten Werten (Schwellen inklusive, jede Zahl im Text); **Randfälle** (leeres Projekt, ein und zwei Tickets, alles ungeschätzt, Gewicht 0).
 - **Presets, Layout, Oberfläche:** AppTest-Rauchtest (jeder Button, jeder Regler am Minimum und Maximum, jede Option jeder Auswahl, Kombinationen der Ebenen, Datei- und API-Pfad, Eigene
   Gewichte, Permalink), Schnellstart oben in der Seitenleiste mit hervorgehobenem aktivem Preset (`tests/test_layout.py`), Footer-Test, Laufzeit-Importe.
 - **Zahlen im README** stehen in `tests/test_claims.py`.
-- **Mutationstest:** Vollauf über alle Stellen von `jira_algorithm.py` und `jira_evaluation.py` (`tools/mutate_demo.py`, Stand `tests/mutation_state.json`): alle Mutanten gefangen bis auf einen äquivalenten (Toleranzgrenze der Ticketzählung in `check_consistency`, erst ab Millionen Tickets wirksam). Nicht gemutet: Einlesen, Beispielprojekt, Darstellung.
+- **Mutationstest:** Vollauf über alle Stellen von `jira_algorithm.py`, `jira_evaluation.py` und `jira_tables.py` (`tools/mutate_demo.py`, Stand `tests/mutation_state.json`): alle Mutanten gefangen bis auf einen äquivalenten (Toleranzgrenze der Ticketzählung in `check_consistency`, erst ab Millionen Tickets wirksam). Nicht gemutet: Einlesen, Beispielprojekt, Darstellung.
 - **Nicht gemacht:** ein Test gegen eine echte Jira-Instanz.
 
 ## Dateistruktur
@@ -93,6 +95,7 @@ beantwortet die Demo nicht: Das hängt davon ab, was berichtet werden soll (Lief
 | `jira_layout.py` | Fester Kopf (Stylesheet) |
 | `jira_presets.py` | Permalink, Presets (Schnellstart in der Seitenleiste, aktives Preset hervorgehoben), Zufalls-Seed-Button |
 | `jira_rng.py` | SplitMix64 (Portfolio-Konvention für Zufall), wortgleich aus `ab-test-demo` |
+| `jira_tables.py` | Tabellen: Status × Gruppe, Beitrag, Status-Übersicht, Erledigt je Monat, Datenqualität, CSV-Format |
 | `jira_scenario.py` | Datenmodell `Issue` und erzeugtes Beispielprojekt |
 | `jira_visualization.py` | Plotly-Abbildungen (Achsen gesperrt) |
 | `requirements-dev.txt` | Laufzeit plus pytest |
@@ -103,7 +106,7 @@ beantwortet die Demo nicht: Das hängt davon ab, was berichtet werden soll (Lief
 
 - **Prognose** („wann ist das Projekt fertig?“): Das braucht ein Modell für Tempo und Umfangsänderungen und wäre eine eigene Demo.
 - **Statushistorie** (Changelog der API) für einen Burn-up mit Status-Gewichten: lässt sich nachrüsten, kostet aber einen Aufruf je Ticket.
-- **PDF-Export**: Die Tabelle je Gruppe lässt sich als CSV laden.
+- **PDF-Export**: Alle Tabellen lassen sich als CSV laden.
 - **Speichern der Zugangsdaten** und Mehrfach-Projekt-Ansichten.
 
 ## Lokal ausführen

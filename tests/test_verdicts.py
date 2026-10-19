@@ -97,3 +97,21 @@ def test_status_list_orders_by_category_then_name_and_takes_the_most_frequent_ca
               Issue(key="4", status="Gemischt", category="new"), Issue(key="5", status="Gemischt", category="done"), Issue(key="6", status="Gemischt", category="done"),
               Issue(key="7", status="A-doing", category="indeterminate"))
     assert ev.status_list(issues) == [("a-open", "new"), ("A-doing", "indeterminate"), ("b-doing", "indeterminate"), ("Done", "done"), ("Gemischt", "done")]
+
+
+def test_consistency_checker_flags_contributions_that_do_not_add_up():
+    import dataclasses
+    from conftest import make_mini
+    a = ev.analyse(make_mini(), ev.Settings())
+    assert ev.check_consistency(a) == []
+    msgs = ev.check_consistency(dataclasses.replace(a, progress=a.progress - 0.01))
+    assert any("Beiträge der Gruppen" in m for m in msgs)
+
+
+def test_consistency_contribution_check_also_covers_total_weights_below_one():
+    import dataclasses
+    from jira_scenario import Issue
+    issues = (Issue(key="A", type="Story", status="Done", category="done", points=0.5), Issue(key="B", type="Story", status="To Do", category="new", points=0.25))
+    a = ev.analyse(issues, ev.Settings())
+    assert ev.check_consistency(a) == []
+    assert any("Beiträge der Gruppen" in m for m in ev.check_consistency(dataclasses.replace(a, progress=0.5)))
