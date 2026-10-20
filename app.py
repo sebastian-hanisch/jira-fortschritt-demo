@@ -47,8 +47,9 @@ scrub_streamlit_logs()      # keine Ausnahmemeldungen (können Ticketdaten entha
 UPLOAD_NOTICE = f"""
 **Bitte vor dem Hochladen lesen.** Die Datei geht zur Berechnung an den Server dieser App (Streamlit Community Cloud, USA) und liegt dort nur für Ihre Sitzung im
 Arbeitsspeicher. Das Werkzeug speichert sie nicht und gibt sie nicht weiter; die Server betreibt aber der Anbieter der Plattform. Laden Sie keine vertraulichen Daten
-ohne Freigabe hoch. Höchstens {C.MAX_UPLOAD_MB} MB und {C.MAX_IMPORT_ISSUES} Tickets je Datei. Gebraucht werden nur Schlüssel, Typ, Status, Statuskategorie, Story Points, übergeordnetes Ticket, Sprint, Erstell- und Lösungsdatum
-(optional Komponente, Label, Release, Bearbeiter, Titel): Alle anderen Spalten, besonders Beschreibungen und Kommentare, gehören vor dem Hochladen gelöscht.
+ohne Freigabe hoch. Höchstens {C.MAX_UPLOAD_MB} MB und {C.MAX_IMPORT_ISSUES} Tickets je Datei. Gebraucht werden nur diese Angaben (bei CSV als Spalten, bei JSON als Felder): Schlüssel, Typ, Status, Statuskategorie, Story Points, übergeordnetes Ticket, Sprint, Erstell- und Lösungsdatum
+(optional Komponente, Label, Release, Bearbeiter, Titel). Alle anderen Spalten bzw. Felder, besonders Beschreibungen und Kommentare, gehören vor dem Hochladen gelöscht;
+bei JSON lässt man sie schon in der Abfrage weg (Parameter `fields`).
 Beim Laden lassen sich die Namen der Bearbeiter ersetzen und die Titel verwerfen. Für sensible Projekte das Werkzeug lokal ausführen: Es ist Open Source (MIT-Lizenz),
 Code und Anleitung stehen im [Repository]({C.REPO_URL}).
 """
@@ -177,7 +178,7 @@ else:
     if loaded is None:
         upload = st.file_uploader("Jira-Export (CSV) oder gespeicherte REST-Antwort (JSON)", type=["csv", "json"], key=f"upload_{st.session_state['upload_version']}")
         if upload is None:
-            st.info("Bitte eine Datei wählen. In Jira: Vorgänge suchen → Exportieren → CSV (alle Felder). Ohne Datei zeigen die Beispieldaten, wie es aussieht.")
+            st.info("Bitte eine Datei wählen: den CSV-Export aus Jira (Vorgänge suchen → Exportieren → CSV, alle Felder) oder eine gespeicherte JSON-Antwort der Jira-REST-Suche (Anleitung unten unter „Datenquellen und Jira-Felder“). Die Beispieldateien oben zeigen beide Formate; ohne Datei zeigen die Beispieldaten, wie es aussieht.")
             st.stop()
         parsed, error = _parse_upload(upload.name, upload.getvalue(), f_points, f_sprint, f_epic)
         if parsed is None:
@@ -381,8 +382,15 @@ with st.expander("🔧 Datenquellen und Jira-Felder"):
 *Status Category*, *Custom field (Story Points)* bzw. *Story Point Estimate*, *Parent* oder *Epic Link* (als Schlüssel oder als Vorgangs-ID), *Sprint* (mehrere Spalten
 möglich), *Component/s*, *Labels*, *Assignee*, *Fix versions*, *Created*, *Resolved*. Pflicht sind nur Schlüssel und Status; was fehlt, wird oben gemeldet.
 
-**JSON.** Eine gespeicherte Antwort der REST-Suche (`{"issues": [...]}`). Die Felder stehen unter `fields`; Story Points, Sprint und Epic-Link liegen in Feldern
-mit instanzabhängiger ID (`customfield_…`), die unter „Jira-Felder“ eintragbar sind.
+**JSON.** Eine gespeicherte Antwort der Jira-REST-Suche, als Objekt `{"issues": [...]}` oder als Liste von Tickets. Erkannt werden die Felder `summary`, `issuetype`,
+`status` (mit Statuskategorie), `parent`, `labels`, `components`, `fixVersions`, `assignee`, `created`, `resolutiondate` sowie die Felder für Story Points, Sprint und Epic-Link;
+sie haben eine instanzabhängige ID (`customfield_…`), die unter „Jira-Felder“ eintragbar ist. Pflicht sind wie bei CSV nur Schlüssel und Status; was fehlt, wird oben gemeldet.
+
+*So kommt man zur Datei:* In Jira angemeldet im Browser die Adresse der Suche Ihrer Instanz mit Ihrer JQL und der Feldliste aufrufen und die Antwort als `.json` speichern, z. B.
+`https://IHRE-INSTANZ.atlassian.net/rest/api/3/search/jql?jql=project=ABC&maxResults=100&fields=summary,issuetype,status,parent,labels,components,fixVersions,assignee,created,resolutiondate,customfield_10016,customfield_10020`
+(Jira Cloud) bzw. `…/rest/api/2/search?…` (Server und Data Center). Der genaue Aufruf hängt von der Jira-Version ab. Die Feldliste (`fields=`) bestimmt, was in der Datei steht;
+Beschreibungen und Kommentare bleiben so draußen. Eine Antwort enthält nur eine Seite der Treffer (`maxResults` begrenzt sie); für größere Projekte ist der CSV-Export einfacher.
+Den Aufbau zeigt „Beispiel als JSON“. Das Einlesen ist nur an dieser Beispieldatei und nachgebauten Antworten getestet, nicht an jeder Jira-Version.
 
 **Datenschutz.** Die Datei geht zur Berechnung an den Server der App und wird nur für die Sitzung im Arbeitsspeicher gehalten, nie gespeichert und nie zwischengespeichert. Nach
 dem Einlesen bleiben nur die berechnungsrelevanten Felder; die Titel der Tickets (außer Epics) und die Namen der Bearbeiter lassen sich beim Laden verwerfen bzw. durch Nummern

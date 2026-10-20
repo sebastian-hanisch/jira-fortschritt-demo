@@ -29,7 +29,7 @@ Die drei festen Status-Schemata: **Nur Done** (0 % / 0 % / 100 %), **Linear** (0
 
 - **Einlesen.** CSV (englische und deutsche Spaltenköpfe, Komma oder Semikolon, Elternverweis als Schlüssel oder ID, mehrfach vorkommende Spalten für Sprint, Labels,
   Komponenten) und JSON (gespeicherte Antwort der Jira-REST-Suche mit einstellbaren Feld-IDs). Beispieldateien in beiden Formaten lassen sich in der App
-  herunterladen. Was beim Einlesen fehlt oder nicht lesbar ist, meldet die App vor der ersten Zahl. Höchstens 5000 Tickets.
+  herunterladen; die App erklärt auch, wie man die JSON-Datei gewinnt (Feldliste der Suche, Seitengröße). Was beim Einlesen fehlt oder nicht lesbar ist, meldet die App vor der ersten Zahl. Höchstens 5000 Tickets.
 - **Datenschutz im Werkzeug.** Kein `st.cache_data` für hochgeladene Daten (nur das erzeugte Beispiel wird zwischengespeichert), keine Anbindung an die Jira-Schnittstelle und kein
   Eingabefeld für Zugangsdaten, Obergrenzen für Dateigröße (50 MB, `server.maxUploadSize`) und Ticketzahl, Hinweis vor dem Hochladen, die Rohdatei wird nach dem Einlesen nicht gehalten
   (neues Upload-Feld, Knopf „Daten jetzt löschen“), Titel (außer Epics) und Bearbeiternamen beim Laden verwerfbar, Fehlermeldungen nennen nur den Fehlertyp, und die Ausnahmemeldungen

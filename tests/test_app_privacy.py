@@ -113,3 +113,18 @@ def test_app_points_to_the_repository_and_local_hosting():
     at.radio(key="source").set_value(C.SOURCE_FILE).run(timeout=TIMEOUT)
     notice = next(w.value for w in at.warning if "Bitte vor dem Hochladen lesen" in w.value)
     assert "Open Source (MIT-Lizenz)" in notice and C.REPO_URL in notice and "lokal ausführen" in notice
+
+
+def test_data_description_covers_csv_and_json():
+    """Hinweis ohne Datei, Hinweis vor dem Hochladen und Erklärung der Datenquellen nennen beide Formate, nicht nur CSV."""
+    at = _fresh_app()
+    at.radio(key="source").set_value(C.SOURCE_FILE).run(timeout=TIMEOUT)
+    info = next(i.value for i in at.info if "Bitte eine Datei wählen" in i.value)
+    assert "CSV-Export" in info and "JSON-Antwort" in info and "REST-Suche" in info
+    notice = next(w.value for w in at.warning if "Bitte vor dem Hochladen lesen" in w.value)
+    assert "bei CSV als Spalten, bei JSON als Felder" in notice and "Spalten bzw. Felder" in notice and "`fields`" in notice
+    at = _fresh_app()                                                            # die Erklärung steht am Seitenende und erscheint erst mit Daten
+    explanation = next(m.value for e in at.expander if "Datenquellen und Jira-Felder" in e.label for m in e.markdown)
+    for part in ("**CSV-Export.**", "**JSON.**", "fields=", "customfield_10016", "maxResults", "rest/api/3/search/jql", "rest/api/2/search", "Beispiel als JSON",
+                 "Pflicht sind wie bei CSV nur Schlüssel und Status"):
+        assert part in explanation, part
