@@ -207,3 +207,14 @@ def test_summary_markdown_just_below_the_cap_has_exactly_one_total_row():
     issues = tuple(Issue(key=f"A-{k}", type="Story", status="Done", category="done", points=1.0, assignee=f"Name {k:03d}") for k in range(n))
     text = T.summary_markdown(issues, ev.analyse(issues, ev.Settings(dimension=C.DIM_ASSIGNEE), TODAY), "SP", TODAY)
     assert text.count("| Summe |") == 1 and text.count("\n| Name ") == n and "Gezeigt:" not in text
+
+
+def test_license_and_readme_agree_on_open_source_and_local_hosting():
+    from pathlib import Path
+    root = Path(__file__).resolve().parent.parent
+    license_text = (root / "LICENSE").read_text(encoding="utf-8")
+    readme = (root / "README.md").read_text(encoding="utf-8")
+    assert license_text.startswith("MIT License") and "Sebastian Hanisch" in license_text and "WITHOUT WARRANTY" in license_text
+    assert "MIT-Lizenz" in readme and "Open Source" in readme and "selbst gehostet" in readme
+    assert f"git clone {C.REPO_URL}.git" in readme and "--server.address localhost" in readme and "http://localhost:8501" in readme
+    assert C.REPO_URL.startswith("https://github.com/") and C.REPO_URL.endswith("/" + root.name)

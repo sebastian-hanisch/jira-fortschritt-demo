@@ -4,7 +4,7 @@ Werkzeug auf der Website „Sebastian Hanisch – Operations Research und Machin
 gespeicherte REST-Antwort als JSON) und rechnet daraus einen **gewichteten Projektfortschritt**: Jeder Status zählt mit einem wählbaren Anteil
 (To Do 0 %, in Arbeit 50 % oder eigene Werte, Done 100 %), jedes Ticket wiegt seine **Story Points** (oder 1), und das Ergebnis lässt sich über mehrere
 **Aggregationsebenen** zeigen: Gesamtprojekt, Epic, Sprint, Release, Komponente, Label, Bearbeiter, Ticket-Typ und Status, auf Wunsch zwei Ebenen als Kreuztabelle.
-Dazu kommen eine **Zusammenfassung zum Kopieren** (Markdown) und sechs **Tabellen** (je Gruppe, Status × Gruppe, Beitrag zum Fortschritt, Status-Übersicht, Erledigt je Monat, Datenqualität), jede als CSV ladbar. Ohne eigene Daten zeigt ein erzeugtes Beispielprojekt, wie es aussieht.
+Das Werkzeug ist **Open Source** (MIT-Lizenz) und lässt sich selbst betreiben; für vertrauliche Daten ist der lokale Betrieb der empfohlene Weg (Abschnitt „Lokal ausführen“). Dazu kommen eine **Zusammenfassung zum Kopieren** (Markdown) und sechs **Tabellen** (je Gruppe, Status × Gruppe, Beitrag zum Fortschritt, Status-Übersicht, Erledigt je Monat, Datenqualität), jede als CSV ladbar. Ohne eigene Daten zeigt ein erzeugtes Beispielprojekt, wie es aussieht.
 
 ## Warum dieses Problem
 
@@ -124,17 +124,30 @@ beantwortet das Werkzeug nicht: Das hängt davon ab, was berichtet werden soll (
 - **PDF-Export**: Alle Tabellen lassen sich als CSV laden.
 - **Mehrfach-Projekt-Ansichten.**
 
+## Lizenz
+
+MIT-Lizenz (Text in `LICENSE`): Der Code darf kopiert, verändert, weitergegeben, selbst gehostet (auch intern in einem Unternehmen) und kommerziell genutzt werden, solange der Urheberrechtsvermerk
+und der Lizenztext mitgeführt werden. Gewährleistung und Haftung sind ausgeschlossen. Die verwendeten Bibliotheken (Streamlit: Apache-2.0, Plotly: MIT, NumPy: BSD-3-Clause) liegen nicht im
+Repository, sondern werden installiert und stehen unter ihren eigenen Lizenzen. Die erzeugten Beispieldaten sind frei erfunden.
+
 ## Lokal ausführen
 
-Für echte Projektdaten lokal ausführen, damit Tickets den eigenen Rechner nicht verlassen. Python 3.12 oder neuer.
+Für echte Projektdaten ist das der empfohlene Weg: Die Tickets bleiben auf dem eigenen Rechner, es gibt weder einen Upload an einen fremden Server noch ein Protokoll bei einem Anbieter. Das Werkzeug selbst baut
+keine Verbindung ins Netz auf (kein Netzwerkcode, ein Test prüft das); installiert werden die Bibliotheken einmalig über `pip`. Voraussetzung: Python 3.12 oder neuer.
 
 ```bash
+git clone https://github.com/sebastian-hanisch/jira-fortschritt-werkzeug.git
+cd jira-fortschritt-werkzeug
+
 python3 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 
 pip install -r requirements.txt
-streamlit run app.py
+streamlit run app.py --server.address localhost
 ```
+
+Die App öffnet sich unter `http://localhost:8501`. Mit `--server.address localhost` hört sie nur auf dem eigenen Rechner; ohne diese Angabe ist sie standardmäßig auch im lokalen Netz erreichbar. Für den Betrieb
+im Unternehmen (eigener Server, interne Adresse) gilt dasselbe Vorgehen; dann bleibt die Datei im eigenen Netz. Der Upload-Hinweis in der App und die Obergrenzen (50 MB, 5000 Tickets) gelten auch dort.
 
 ## Tests ausführen
 

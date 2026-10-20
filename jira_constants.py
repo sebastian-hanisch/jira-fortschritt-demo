@@ -21,6 +21,7 @@ ASSIGNEES = ("Person A", "Person B", "Person C", "Person D", "Person E")
 
 # --- Jira-Import ---------------------------------------------------------------------------------------------------------------------------
 MAX_IMPORT_ISSUES = 5000      # harte Obergrenze für eine Datei: alle Schritte sind O(n), das Diagramm-Budget ist darauf ausgelegt
+REPO_URL = "https://github.com/sebastian-hanisch/jira-fortschritt-werkzeug"      # Open Source (MIT-Lizenz): Code und Anleitung zum lokalen Betrieb
 MAX_UPLOAD_MB = 50            # Größe einer hochgeladenen Datei; gehört in .streamlit/config.toml als server.maxUploadSize (tests/test_app.py prüft die Übereinstimmung)
 DEFAULT_POINTS_FIELDS = "customfield_10016, customfield_10026"   # Kandidaten für das Story-Point-Feld; je Jira-Instanz verschieden
 DEFAULT_SPRINT_FIELD = "customfield_10020"

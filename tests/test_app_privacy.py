@@ -104,3 +104,12 @@ def test_server_config_limits_the_upload_size_and_disables_usage_statistics():
     config = tomllib.loads((ROOT / ".streamlit" / "config.toml").read_text(encoding="utf-8"))
     assert config["server"]["maxUploadSize"] == C.MAX_UPLOAD_MB == 50
     assert config["browser"]["gatherUsageStats"] is False
+
+
+def test_app_points_to_the_repository_and_local_hosting():
+    at = _fresh_app()
+    caption = next(c.value for c in at.caption if "Open Source" in c.value)
+    assert "MIT-Lizenz" in caption and C.REPO_URL in caption and "lokal ausführen" in caption
+    at.radio(key="source").set_value(C.SOURCE_FILE).run(timeout=TIMEOUT)
+    notice = next(w.value for w in at.warning if "Bitte vor dem Hochladen lesen" in w.value)
+    assert "Open Source (MIT-Lizenz)" in notice and C.REPO_URL in notice and "lokal ausführen" in notice

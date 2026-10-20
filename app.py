@@ -49,7 +49,8 @@ UPLOAD_NOTICE = f"""
 Arbeitsspeicher. Das Werkzeug speichert sie nicht und gibt sie nicht weiter; die Server betreibt aber der Anbieter der Plattform. Laden Sie keine vertraulichen Daten
 ohne Freigabe hoch. Höchstens {C.MAX_UPLOAD_MB} MB und {C.MAX_IMPORT_ISSUES} Tickets je Datei. Gebraucht werden nur Schlüssel, Typ, Status, Statuskategorie, Story Points, übergeordnetes Ticket, Sprint, Erstell- und Lösungsdatum
 (optional Komponente, Label, Release, Bearbeiter, Titel): Alle anderen Spalten, besonders Beschreibungen und Kommentare, gehören vor dem Hochladen gelöscht.
-Beim Laden lassen sich die Namen der Bearbeiter ersetzen und die Titel verwerfen. Für sensible Projekte das Werkzeug lokal ausführen (siehe README im Repository).
+Beim Laden lassen sich die Namen der Bearbeiter ersetzen und die Titel verwerfen. Für sensible Projekte das Werkzeug lokal ausführen: Es ist Open Source (MIT-Lizenz),
+Code und Anleitung stehen im [Repository]({C.REPO_URL}).
 """
 
 
@@ -108,6 +109,7 @@ Unten: die **Kernfrage** (wie stark hängt die Zahl von den Annahmen ab?) und di
 """
 )
 st.caption("🔗 Die Adresszeile oben spiegelt Ihre aktuelle Konfiguration wider – einfach kopieren, um ein Szenario zu teilen.")
+st.caption(f"🔓 Open Source (MIT-Lizenz): Code und Anleitung im [Repository]({C.REPO_URL}). Mit eigenen, vertraulichen Daten besser lokal ausführen: Dann verlassen sie Ihren Rechner nicht.")
 
 load_permalink_settings()
 init_session_state_defaults()
