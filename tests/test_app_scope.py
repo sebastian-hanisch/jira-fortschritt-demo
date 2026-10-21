@@ -101,3 +101,21 @@ def test_every_table_offers_wiki_markup_and_a_copyable_table():
     assert len(wiki) >= 6 and all(w.split("\n")[0].endswith("||") and w.split("\n")[1].startswith("|") for w in wiki)
     html_blocks = [str(h.value) for h in at.get("html") if "<table" in str(h.value)]
     assert len(html_blocks) >= 6 and all("<thead>" in h for h in html_blocks)
+
+
+def test_a_chosen_root_is_a_standalone_dataset_for_all_further_choices():
+    import jira_evaluation as ev
+
+    sample = make_sample(C.DEFAULT_N_EPICS, C.DEFAULT_SEED)
+    story = next(k for k, d in A.root_choices(sample) if d >= 1)                         # eine Story mit Sub-Tasks: ein kleiner Teilbaum
+    scoped = A.scope_issues(sample, story)
+    at = _fresh_app()
+    at.selectbox(key="root").set_value(story).run(timeout=TIMEOUT)
+    _ok(at)
+    assert list(at.selectbox(key="sprint_from").options[1:]) == A.sprint_order(scoped) and len(A.sprint_order(scoped)) <= len(A.sprint_order(sample))
+    assert at.selectbox(key="root").value == story
+    at.selectbox(key="dimension").set_value(C.DIM_LEVEL).run(timeout=TIMEOUT)
+    _ok(at)
+    assert len(at.selectbox(key="level").options) == A.max_level(scoped) < A.max_level(sample)
+    want = ev.analyse(scoped, ev.Settings(root=story, dimension=C.DIM_LEVEL))
+    assert at.metric[0].value == ev.pct(want.progress)

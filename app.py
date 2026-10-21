@@ -104,6 +104,31 @@ with st.expander("🎫 Die Tickets des Beispielprojekts ansehen"):
     st.dataframe(ticket_rows, hide_index=True, width="stretch", key="df_tickets")
     st.download_button("⬇️ Als CSV", rows_to_csv(ticket_rows), file_name="beispielprojekt-tickets.csv", mime="text/csv", key="csv_tickets")
 
+# --- Teilprojekt ---------------------------------------------------------------------------------------------------------------------------
+
+issues_all = issues
+root_choices = A.root_choices(issues_all)
+root_depth = dict(root_choices)
+by_key = {t.key: t for t in issues_all}
+root_options = (C.ROOT_ALL, *root_depth)
+if st.session_state.get("root", C.ROOT_ALL) not in root_options:        # die Daten haben gewechselt: die alte Wurzel gibt es nicht mehr
+    st.session_state["root"] = C.ROOT_ALL
+
+
+def root_label(key):
+    if key == C.ROOT_ALL:
+        return "(ganzes Projekt)"
+    title = by_key[key].summary
+    return "↳ " * root_depth[key] + key + (f": {title}" if title else "")
+
+
+root = st.selectbox(
+    "Teilprojekt (Wurzel der Auswertung)", root_options, key="root", format_func=root_label, disabled=not root_choices,
+    help="Macht dieses Ticket zur Wurzel: Alles Weitere (Status und ihre Gewichte, Zeitraum, Ebenen, Kennzahlen, Diagramme, Tabellen, Zusammenfassung, Sensitivität) gilt dann wie für einen eigenständigen "
+         "Datensatz aus diesem Ticket und allem darunter, z. B. einer Initiative, einem Epic oder einer Story mit ihren Sub-Tasks. Die Auswahl wird nicht in die Adresszeile geschrieben, weil Ticketschlüssel nicht in eine Adresse gehören.")
+issues = A.scope_issues(issues_all, root)
+
+
 # --- Status-Gewichte -----------------------------------------------------------------------------------------------------------------------
 
 statuses = status_list(issues)
@@ -125,25 +150,6 @@ with st.expander("⚖️ Gewichte je Status – Tabelle ansehen und ändern", ex
 unit = C.SAMPLE_UNIT if weight_mode == C.WEIGHT_POINTS else "Tickets"
 st.markdown("## 🎯 Ergebnis")
 metrics_box = st.container()
-root_choices = A.root_choices(issues)
-root_depth = dict(root_choices)
-by_key = {t.key: t for t in issues}
-root_options = (C.ROOT_ALL, *root_depth)
-if st.session_state.get("root", C.ROOT_ALL) not in root_options:        # die Daten haben gewechselt: die alte Wurzel gibt es nicht mehr
-    st.session_state["root"] = C.ROOT_ALL
-
-
-def root_label(key):
-    if key == C.ROOT_ALL:
-        return "(ganzes Projekt)"
-    title = by_key[key].summary
-    return "↳ " * root_depth[key] + key + (f": {title}" if title else "")
-
-
-root = st.selectbox(
-    "Teilprojekt (Wurzel der Auswertung)", root_options, key="root", format_func=root_label, disabled=not root_choices,
-    help="Beschränkt die gesamte Auswertung (Kennzahlen, Diagramme, Tabellen, Zusammenfassung, Sensitivität) auf dieses Ticket und alles darunter: z. B. eine Initiative, ein Epic "
-         "oder eine Story mit ihren Sub-Tasks. Die Auswahl wird nicht in die Adresszeile geschrieben, weil Ticketschlüssel nicht in eine Adresse gehören.")
 sprint_options = (C.SPRINT_OPEN, *A.sprint_order(issues))
 for _key in ("sprint_from", "sprint_to"):
     if st.session_state.get(_key, C.SPRINT_OPEN) not in sprint_options:        # das Beispielprojekt hat gewechselt: den alten Sprint gibt es nicht mehr
@@ -188,8 +194,8 @@ a = analyse(issues, settings, as_of)
 for problem in check_consistency(a):
     st.error(f"Interne Prüfung verletzt: {problem}")
 if root != C.ROOT_ALL:
-    in_scope = len(A.subtree_keys(issues, root))
-    st.info(f"Die Auswertung ist auf **{root_label(root).lstrip('↳ ')}** und alles darunter beschränkt: {in_scope} von {len(issues)} Tickets, davon {a.n_atoms} zählende. "
+    in_scope = len(issues)
+    st.info(f"Die Auswertung ist auf **{root_label(root).lstrip('↳ ')}** und alles darunter beschränkt: {in_scope} von {len(issues_all)} Tickets, davon {a.n_atoms} zählende. "
             "Kennzahlen, Diagramme, Tabellen, Zusammenfassung und Sensitivität gelten nur für diesen Teilbaum.")
 if period_active:
     span = f"{sprint_from or 'Anfang'} bis {sprint_to or 'Ende'}"          # Sprint-Namen tragen „Sprint“ meist selbst
@@ -357,7 +363,7 @@ verbindet sich nicht mit Jira; eigene Tickets kann sie nicht auswerten.
 
 **Einfügen in Jira und Confluence.** Unter jeder Tabelle bietet „In Jira oder Confluence einfügen“ das Wiki-Markup (Kopiersymbol im Feld; für Jira-Textfelder und Confluence über Einfügen → Markup) und dieselbe Tabelle als HTML zum Markieren und Kopieren.
 
-**Teilprojekt und Hierarchiegraph.** Die Auswahl „Teilprojekt“ setzt ein Ticket zur Wurzel: Gerechnet wird nur mit den Tickets der Zählebene, die dieses Ticket selbst oder (über beliebig viele Ebenen) darunter sind, z. B. eine Initiative, ein Epic oder eine Story mit ihren Sub-Tasks. Der Median für ungeschätzte Tickets und alle Kennzahlen, Tabellen, Diagramme, die Zusammenfassung und die Sensitivität beziehen sich dann auf diesen Teilbaum. Der Hierarchiegraph zeigt den Baum von links nach rechts; ein Knoten trägt die Summe der zählenden Tickets darunter. Bei mehr als 250 Knoten wird die tiefste Ebene zusammengefasst; ein Teilprojekt als Wurzel zeigt dann mehr Tiefe. Eltern-Verweise, die im Kreis laufen, werden je Ticket nur einmal gezählt.
+**Teilprojekt und Hierarchiegraph.** Die Auswahl „Teilprojekt“ (über den Gewichten) setzt ein Ticket zur Wurzel: Alles Weitere gilt wie für einen eigenständigen Datensatz aus diesem Ticket und allem darunter, also auch die Status der Gewichtstabelle, die wählbaren Sprints, die Hierarchiestufen (Stufe 1 ist die Wurzel) und die Epic-Zuordnung (ein Epic über der Wurzel gibt es dann nicht). Gerechnet wird nur mit den Tickets der Zählebene, die dieses Ticket selbst oder (über beliebig viele Ebenen) darunter sind, z. B. eine Initiative, ein Epic oder eine Story mit ihren Sub-Tasks. Der Median für ungeschätzte Tickets und alle Kennzahlen, Tabellen, Diagramme, die Zusammenfassung und die Sensitivität beziehen sich dann auf diesen Teilbaum. Der Hierarchiegraph zeigt den Baum von links nach rechts; ein Knoten trägt die Summe der zählenden Tickets darunter. Bei mehr als 250 Knoten wird die tiefste Ebene zusammengefasst; ein Teilprojekt als Wurzel zeigt dann mehr Tiefe. Eltern-Verweise, die im Kreis laufen, werden je Ticket nur einmal gezählt.
 """
     )
 

@@ -7,7 +7,7 @@ Gutschrift c in [0, 1] (Anteil der Arbeit, der laut Status als getan gilt). Der 
 
 import datetime as dt
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from statistics import median
 
 import numpy as np
@@ -93,6 +93,15 @@ def subtree_keys(issues, root: str) -> set[str]:
                 seen.add(issues[j].key)
                 stack.append(issues[j].key)
     return seen
+
+
+def scope_issues(issues, root: str = C.ROOT_ALL) -> tuple[Issue, ...]:
+    """Teilprojekt als eigenständiger Datensatz: das Ticket `root` und alles darunter in der Reihenfolge der Daten. Die Wurzel verliert ihr übergeordnetes Ticket, damit nichts nach außen zeigt:
+    Epic-Zuordnung, geerbter Sprint und Hierarchiestufen beginnen dann an der Wurzel. Ohne Wurzel bleibt alles."""
+    if root == C.ROOT_ALL:
+        return tuple(issues)
+    keep = subtree_keys(issues, root)
+    return tuple(replace(t, parent="") if t.key == root else t for t in issues if t.key in keep)
 
 
 def select_atoms(issues, level: str, root: str = C.ROOT_ALL) -> list[int]:
