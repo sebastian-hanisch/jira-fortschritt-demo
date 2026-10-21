@@ -150,7 +150,7 @@ def test_all_table_tabs_and_csv_downloads_are_there():
 
     at = _fresh_app()
     _ok(at)
-    assert [t.label for t in at.tabs] == ["Je Gruppe", "Status × Gruppe", "Beitrag zum Fortschritt", "Status-Übersicht", "Erledigt je Monat", "Datenqualität"]
+    assert [t.label for t in at.tabs if t.label not in ("Wiki-Markup", "Tabelle zum Kopieren")] == ["Je Gruppe", "Status × Gruppe", "Beitrag zum Fortschritt", "Status-Übersicht", "Erledigt je Monat", "Datenqualität"]
     assert len(at.get("download_button")) >= 7                                     # Beispiel, sechs Tabellen, dazu die Liste ohne Story Points
     assert at.radio(key="table_metric").value == T.METRIC_WEIGHT
 

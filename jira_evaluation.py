@@ -19,6 +19,10 @@ class Settings:
     blend: bool = False
     dimension: str = C.DEFAULT_DIM
     dimension2: str = C.DEFAULT_DIM2
+    sprint_from: str = C.SPRINT_OPEN                     # Zeitraum: erster Sprint (offen = vom Anfang)
+    sprint_to: str = C.SPRINT_OPEN                       # Zeitraum: letzter Sprint (offen = bis zum Ende)
+    include_no_sprint: bool = False                      # Tickets ohne Sprint im eingeschränkten Zeitraum mitzählen
+    level: int = 1                                       # Hierarchiestufe der Ebene „Hierarchiestufe“ (1 = oberste)
     root: str = C.ROOT_ALL                               # Teilprojekt: nur dieses Ticket und alles darunter (leer = ganzes Projekt)
 
 
@@ -42,6 +46,7 @@ class Analysis:
     c: np.ndarray               # Gutschrift je Atom
     done: np.ndarray            # Statuskategorie Done je Atom
     assign: A.Assignment        # Zuordnung der Atome zur ersten Ebene
+    n_outside: int = 0          # Atome außerhalb des gewählten Zeitraums
 
 
 def de(x: float, digits: int = 1, sign: bool = False) -> str:
@@ -66,20 +71,23 @@ def status_list(issues) -> list[tuple[str, str]]:
 def analyse(issues, settings: Settings, today: dt.date = C.SAMPLE_TODAY) -> Analysis:
     credit_of = A.status_credits(status_list(issues), settings.scheme, settings.custom)
     atoms = A.select_atoms(issues, settings.count_level, settings.root)
+    in_period = A.filter_sprints(issues, atoms, settings.sprint_from, settings.sprint_to, settings.include_no_sprint)
+    outside = frozenset(atoms) - frozenset(in_period)
+    atoms = in_period
     w = A.atom_weights(issues, atoms, settings.weight_mode, settings.unest_rule)
     blend = settings.blend and settings.count_level == C.LEVEL_STORIES
     c = A.atom_credits(issues, atoms, credit_of, blend)
     done = np.array([issues[i].category == "done" for i in atoms], dtype=bool)
     unest = np.array([issues[i].points is None for i in atoms], dtype=bool)
     p_w, p_d, p_n = A.overall(w, c, done)
-    first = A.assign_groups(issues, atoms, settings.dimension)
+    first = A.assign_groups(issues, atoms, settings.dimension, settings.level)
     stats = A.aggregate(first, w, c, done, unest)
     cross = None
     if settings.dimension2 != C.DIM_NONE:
-        second = A.assign_groups(issues, atoms, settings.dimension2)
+        second = A.assign_groups(issues, atoms, settings.dimension2, settings.level)
         cross = A.aggregate(A.cross_assignment(first, second), w, c, done, unest)
     return Analysis(settings, credit_of, len(atoms), float(w.sum()), p_w, p_d, p_n, int(unest.sum()), stats, cross,
-                    A.hierarchy(issues, atoms, w, c), A.tree_graph(issues, atoms, w, c, credit_of, settings.root), A.burn_up(issues, atoms, w, done, today), tuple(atoms), w, c, done, first)
+                    A.hierarchy(issues, atoms, w, c), A.tree_graph(issues, atoms, w, c, credit_of, settings.root, excluded=outside), A.burn_up(issues, atoms, w, done, today), tuple(atoms), w, c, done, first, len(outside))
 
 
 def sensitivity(issues, settings: Settings) -> list[dict]:

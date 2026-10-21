@@ -6,7 +6,7 @@ Fall-Demo auf der Website „Sebastian Hanisch – Operations Research und Machi
 **erzeugten Beispielprojekt** (Tickets mit Status, Story Points, Sprints, Teams und Hierarchie, wie ein Jira-Export sie liefert) einen **gewichteten Projektfortschritt**: Jeder Status zählt mit einem wählbaren
 Anteil (To Do 0 %, in Arbeit 50 % oder eigene Werte, Done 100 %), jedes Ticket wiegt seine **Story Points** (oder 1), und das Ergebnis lässt sich über mehrere **Aggregationsebenen** zeigen: Gesamtprojekt, Epic,
 Sprint, Release, Komponente, Label, Bearbeiter, Team, Bereich, Priorität, Ticket-Typ und Status, auf Wunsch zwei Ebenen als Kreuztabelle. Die Auswertung lässt sich auf ein **Teilprojekt** (ein Ticket als
-Wurzel) beschränken, und ein **Hierarchiegraph** zeigt den Baum mit Gewicht und Fortschritt je Knoten. Dazu kommen eine **Zusammenfassung zum Kopieren** (Markdown), die **Ticketliste** des Beispielprojekts und sechs
+Wurzel) und auf einen **Zeitraum** (Sprint von … bis …) beschränken, die Ebene **Hierarchiestufe** fasst auf eine wählbare Stufe des Ticket-Baums zusammen, und ein **Hierarchiegraph** zeigt den Baum mit Gewicht und Fortschritt je Knoten. Dazu kommen eine **Zusammenfassung zum Kopieren** (Markdown), die **Ticketliste** des Beispielprojekts und sechs
 **Tabellen** (je Gruppe, Status × Gruppe, Beitrag zum Fortschritt, Status-Übersicht, Erledigt je Monat, Datenqualität), jede als CSV ladbar. Die Demo liest keine Jira-Datei und verbindet sich nicht mit Jira.
 
 ## Warum dieses Problem
@@ -31,6 +31,8 @@ Das Beispielprojekt hat die gewöhnlichen Status (Backlog, To Do, In Progress, I
 
 ## Methodik
 
+- **Zeitraum und Hierarchiestufe.** Die Datengrundlage lässt sich über „von Sprint … bis Sprint …“ einschränken (Sprint wie bei der Ebene Sprint: bei mehreren der letzte, bei Sub-Tasks der des übergeordneten Tickets; natürliche Reihenfolge der Namen; Tickets ohne Sprint nur mit Schalter); Median, Kennzahlen, Tabellen, Zusammenfassung, Sensitivität und Verlauf folgen dem Zeitraum, und der Hierarchiegraph zeigt die übrigen Tickets grau. Die Ebene „Hierarchiestufe“ fasst auf eine wählbare Stufe des Ticket-Baums zusammen (Gewicht = Summe, Fortschritt = gewichtet, nicht der Mittelwert der Kinder). Beides steht nicht in der Adresszeile.
+- **Einfügen in Jira und Confluence.** Jede Tabelle gibt es zusätzlich als Wiki-Markup (`||Kopf||`, `|Zelle|`, Sonderzeichen geschützt, Summenzeile fett) und als HTML-Tabelle, die sich markieren und in Confluence oder ein Jira-Textfeld einfügen lässt.
 - **Teilprojekt und Hierarchiegraph.** Ein Ticket mit Kindern lässt sich zur Wurzel wählen; dann zählen nur die Tickets der Zählebene im Teilbaum (die Wurzel selbst eingeschlossen), und alles Weitere (Median für Ungeschätztes, Kennzahlen, Tabellen, Zusammenfassung, Sensitivität) bezieht sich darauf. Die Wahl steht nicht in der Adresszeile. Der Graph zeichnet Projekt oder Teilprojekt von links nach rechts mit Knotengröße = Gewicht und Farbe = Fortschritt; ab 250 Knoten wird die tiefste Ebene zusammengefasst, Eltern-Verweise im Kreis zählen je Ticket einmal.
 - **Aggregation.** Die Ebene ist ein Gruppenschlüssel je Ticket; Sub-Tasks erben Sprint, Komponente und Release vom übergeordneten Ticket, bei mehreren Sprints zählt der letzte.
   Die Summen laufen vektorisiert über `np.bincount`.
@@ -76,7 +78,7 @@ beantwortet die Demo nicht: Das hängt davon ab, was berichtet werden soll (Lief
 - **Verdikte** als reine Funktionen an handgesetzten Werten (Schwellen inklusive, jede Zahl im Text); **Randfälle** (leeres Projekt, ein und zwei Tickets, alles ungeschätzt, Gewicht 0).
 - **Presets, Layout, Oberfläche:** AppTest-Rauchtest (jeder Button, jeder Regler am Minimum und Maximum, jede Option jeder Auswahl, Kombinationen der Ebenen, Eigene Gewichte, Teilprojekt, Ticketliste, Permalink), Schnellstart oben in der Seitenleiste mit hervorgehobenem aktivem Preset (`tests/test_layout.py`), Footer-Test, Laufzeit-Importe.
 - **Zahlen im README** stehen in `tests/test_claims.py`.
-- **Mutationstest:** Vollauf über alle Stellen von `jira_algorithm.py`, `jira_evaluation.py` und `jira_tables.py` (289 Stellen) (`tools/mutate_demo.py`, Stand `tests/mutation_state.json`): alle Mutanten gefangen bis auf sechs äquivalente (Toleranzgrenze der Ticketzählung in `check_consistency`, erst ab Millionen Tickets wirksam; zwei Randvergleiche der Zusammenfassung bei genau 40 Gruppen, wo beide Zweige dasselbe liefern; zwei Randwerte beim Aufbau des Hierarchiegraphen und eine Schleifengrenze der Baumsuche, die sich nie auswirken). Nicht gemutet: Beispielprojekt, Darstellung.
+- **Mutationstest:** Vollauf über alle Stellen von `jira_algorithm.py`, `jira_evaluation.py` und `jira_tables.py` (330 Stellen) (`tools/mutate_demo.py`, Stand `tests/mutation_state.json`): alle Mutanten gefangen bis auf acht äquivalente (Toleranzgrenze der Ticketzählung in `check_consistency`, erst ab Millionen Tickets wirksam; zwei Randvergleiche der Zusammenfassung bei genau 40 Gruppen, wo beide Zweige dasselbe liefern; zwei Randwerte beim Aufbau des Hierarchiegraphen und eine Schleifengrenze der Baumsuche sowie zwei Randwerte der oberen Sprint-Grenze, die sich nie auswirken). Nicht gemutet: Beispielprojekt, Darstellung.
 
 ## Dateistruktur
 

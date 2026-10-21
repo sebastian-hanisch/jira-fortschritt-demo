@@ -44,7 +44,7 @@ def o_epic(by_key, issue):
     return ""
 
 
-def o_labels(by_key, issue, dim):
+def o_labels(by_key, issue, dim, level=1):
     def inherited(getter):
         value = getter(issue)
         if not value and issue.parent in by_key:
@@ -55,6 +55,16 @@ def o_labels(by_key, issue, dim):
     if dim == C.DIM_EPIC:
         e = o_epic(by_key, issue)
         return [f"{e}: {by_key[e].summary or e}" if e else "(ohne Epic)"]
+    if dim == C.DIM_LEVEL:
+        chain, cur = [issue], by_key.get(issue.parent)
+        while cur is not None and len(chain) < 50:
+            chain.append(cur)
+            cur = by_key.get(cur.parent)
+        chain.reverse()
+        if len(chain) < level:
+            return [f"(keine Stufe {level})"]
+        t = chain[level - 1]
+        return [f"{t.key}: {t.summary}" if t.summary else t.key]
     if dim == C.DIM_SPRINT:
         v = inherited(lambda x: x.sprints)
         return [v[-1]] if v else ["(ohne Sprint)"]

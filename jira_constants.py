@@ -47,9 +47,9 @@ UNEST_RULES = (UNEST_MEDIAN, UNEST_ONE, UNEST_IGNORE)
 LEVEL_STORIES, LEVEL_SUBTASKS = "Stories, Tasks und Bugs", "Sub-Tasks"
 COUNT_LEVELS = (LEVEL_STORIES, LEVEL_SUBTASKS)
 
-DIM_ALL, DIM_EPIC, DIM_SPRINT, DIM_RELEASE, DIM_COMPONENT, DIM_LABEL, DIM_ASSIGNEE, DIM_TEAM, DIM_AREA, DIM_PRIORITY, DIM_TYPE, DIM_STATUS = (
-    "Gesamtes Projekt", "Epic", "Sprint", "Release (Fix Version)", "Komponente", "Label", "Bearbeiter", "Team", "Bereich", "Priorität", "Ticket-Typ", "Status")
-DIMENSIONS = (DIM_ALL, DIM_EPIC, DIM_SPRINT, DIM_RELEASE, DIM_COMPONENT, DIM_LABEL, DIM_ASSIGNEE, DIM_TEAM, DIM_AREA, DIM_PRIORITY, DIM_TYPE, DIM_STATUS)
+DIM_ALL, DIM_EPIC, DIM_LEVEL, DIM_SPRINT, DIM_RELEASE, DIM_COMPONENT, DIM_LABEL, DIM_ASSIGNEE, DIM_TEAM, DIM_AREA, DIM_PRIORITY, DIM_TYPE, DIM_STATUS = (
+    "Gesamtes Projekt", "Epic", "Hierarchiestufe", "Sprint", "Release (Fix Version)", "Komponente", "Label", "Bearbeiter", "Team", "Bereich", "Priorität", "Ticket-Typ", "Status")
+DIMENSIONS = (DIM_ALL, DIM_EPIC, DIM_LEVEL, DIM_SPRINT, DIM_RELEASE, DIM_COMPONENT, DIM_LABEL, DIM_ASSIGNEE, DIM_TEAM, DIM_AREA, DIM_PRIORITY, DIM_TYPE, DIM_STATUS)
 DIM_NONE = "(keine zweite Ebene)"
 DIMENSIONS_2 = (DIM_NONE,) + DIMENSIONS[1:]
 DEFAULT_DIM, DEFAULT_DIM2 = DIM_EPIC, DIM_NONE
@@ -58,6 +58,8 @@ BURNUP_STEP_DAYS = 7
 GRAPH_MAX_NODES = 250      # Hierarchiegraph: mehr Knoten lassen sich nicht lesen; die tiefste Ebene wird dann zusammengefasst
 GRAPH_LABEL_MAX = 60       # bis zu dieser Knotenzahl trägt jeder Knoten seinen Schlüssel, darüber nur die Knoten mit Kindern
 ROOT_ALL = ""              # Wurzel der Auswertung: leer = ganzes Projekt
+MAX_LEVELS = 8             # höchste wählbare Hierarchiestufe
+SPRINT_OPEN = ""           # offene Grenze des Sprint-Zeitraums
 
 # --- Farben --------------------------------------------------------------------------------------------------------------------------------
 COLOR_DONE = "#2F6B65"

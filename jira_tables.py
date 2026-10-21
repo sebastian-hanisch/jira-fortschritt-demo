@@ -3,6 +3,7 @@
 Die Zeilen tragen Zahlen als Zahlen (kein Text); Formatierung übernimmt die Anzeige, `rows_to_csv` schreibt die Datei für Excel mit Dezimalkomma."""
 
 import datetime as dt
+import html
 
 import numpy as np
 
@@ -171,6 +172,66 @@ def ticket_rows(issues) -> list[dict]:
         for t in issues]
 
 
+def format_cell(value, fmt=None) -> str:
+    """Zelle als Text für Jira und Confluence (deutsche Zahlen): Streamlit-Formate „percent“, „%.0f“, „%.1f“, „%.2f“; Ganzzahlen ohne Nachkommastelle; fehlende Werte leer."""
+    if value is None or (isinstance(value, float) and value != value):
+        return ""
+    if isinstance(value, bool):
+        return "ja" if value else "nein"
+    if isinstance(value, (int, float)):
+        if fmt == "percent":
+            return pct(value)
+        digits = {"%.0f": 0, "%.1f": 1, "%.2f": 2}.get(fmt)
+        if digits is None:
+            return str(int(value)) if float(value).is_integer() else de(float(value), 1)
+        return de(float(value), digits)
+    return str(value)
+
+
+_WIKI_SPECIAL = "\\|{}[]*_"
+
+
+def _wiki_escape(text: str) -> str:
+    return "".join("\\" + ch if ch in _WIKI_SPECIAL else ch for ch in text)
+
+
+def rows_to_wiki(rows: list[dict], formats: dict | None = None) -> str:
+    """Tabelle als Wiki-Markup für Jira- und Confluence-Textfelder (`||Kopf||` und `|Zelle|`); leere Zellen als Leerzeichen, die Summenzeile fett, Sonderzeichen mit Rückstrich geschützt.
+    Schlüssel wie ABC-12 verlinkt Jira beim Anzeigen selbst."""
+    if not rows:
+        return ""
+    formats = formats or {}
+    head = "||" + "||".join(_wiki_escape(h) for h in rows[0]) + "||"
+    lines = [head]
+    for row in rows:
+        bold = str(next(iter(row.values()))) == SUM_LABEL
+        cells = []
+        for name, value in row.items():
+            text = _wiki_escape(format_cell(value, formats.get(name)))
+            cells.append((f"*{text}*" if bold and text else text) or " ")
+        lines.append("|" + "|".join(cells) + "|")
+    return "\n".join(lines)
+
+
+def rows_to_html(rows: list[dict], formats: dict | None = None) -> str:
+    """Dieselbe Tabelle als HTML mit eingebetteten Stilen: markieren, kopieren und in Confluence oder ein Jira-Textfeld einfügen übernimmt die Tabelle samt Kopfzeile. Zahlen rechtsbündig."""
+    if not rows:
+        return ""
+    formats = formats or {}
+    border = "border:1px solid #c1c7d0;padding:4px 8px;"
+    numeric = {name for name in rows[0] if any(isinstance(r[name], (int, float)) and not isinstance(r[name], bool) for r in rows)}
+    head = "".join(f'<th style="{border}background:#f4f5f7;text-align:{"right" if n in numeric else "left"};">{html.escape(n)}</th>' for n in rows[0])
+    body = []
+    for row in rows:
+        bold = str(next(iter(row.values()))) == SUM_LABEL
+        cells = []
+        for name, value in row.items():
+            text = html.escape(format_cell(value, formats.get(name)))
+            cells.append(f'<td style="{border}text-align:{"right" if name in numeric else "left"};">{f"<strong>{text}</strong>" if bold and text else text}</td>')
+        body.append("<tr>" + "".join(cells) + "</tr>")
+    return f'<table style="border-collapse:collapse;"><thead><tr>{head}</tr></thead><tbody>{"".join(body)}</tbody></table>'
+
+
 def rows_to_csv(rows: list[dict]) -> bytes:
     """CSV für Excel im deutschen Raum: Semikolon, Dezimalkomma, UTF-8 mit Kennung. Zahlen unverändert genau, leere Zellen für None, Semikolon in Text durch Komma ersetzt."""
     if not rows:
@@ -206,6 +267,9 @@ def summary_markdown(issues, a: Analysis, unit: str, as_of: dt.date) -> str:
     if s.root != C.ROOT_ALL:
         title = next((t.summary for t in issues if t.key == s.root and t.summary), "")
         lines += [f"Teilprojekt: {s.root}{': ' + title if title else ''} und alles darunter", ""]
+    if s.sprint_from != C.SPRINT_OPEN or s.sprint_to != C.SPRINT_OPEN:
+        span = f"{s.sprint_from or 'Anfang'} bis {s.sprint_to or 'Ende'}"
+        lines += [f"Zeitraum: {span}" + (", einschließlich Tickets ohne Sprint" if s.include_no_sprint else "") + f" ({a.n_outside} Tickets außerhalb)", ""]
     lines += [
         f"- Fortschritt (nach Status gewichtet): {_pct_or_dash(a.progress)}",
         f"- Nur Done: {_pct_or_dash(a.progress_done)} nach Gewicht, {_pct_or_dash(a.progress_count)} nach Ticketzahl",

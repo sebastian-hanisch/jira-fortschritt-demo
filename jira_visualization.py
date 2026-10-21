@@ -106,6 +106,8 @@ def _node_hover(g, k: int, unit: str) -> str:
     lines.append("kein Fortschritt messbar" if np.isnan(g.progress[k]) else f"Fortschritt {100 * g.progress[k]:.0f} %")
     if not g.is_atom[k] and g.is_leaf[k] and g.weight[k] <= 0 and not np.isnan(g.progress[k]):
         lines.append("zählt nicht selbst (Zählebene)")
+    if g.ignored is not None and g.ignored[k]:
+        lines.append("außerhalb des Zeitraums: zählt nicht")
     if g.hidden[k]:
         lines.append(f"{g.hidden[k]} Tickets darunter nicht gezeichnet")
     return "<br>".join(lines)

@@ -144,14 +144,44 @@ root = st.selectbox(
     "Teilprojekt (Wurzel der Auswertung)", root_options, key="root", format_func=root_label, disabled=not root_choices,
     help="Beschränkt die gesamte Auswertung (Kennzahlen, Diagramme, Tabellen, Zusammenfassung, Sensitivität) auf dieses Ticket und alles darunter: z. B. eine Initiative, ein Epic "
          "oder eine Story mit ihren Sub-Tasks. Die Auswahl wird nicht in die Adresszeile geschrieben, weil Ticketschlüssel nicht in eine Adresse gehören.")
+sprint_options = (C.SPRINT_OPEN, *A.sprint_order(issues))
+for _key in ("sprint_from", "sprint_to"):
+    if st.session_state.get(_key, C.SPRINT_OPEN) not in sprint_options:        # das Beispielprojekt hat gewechselt: den alten Sprint gibt es nicht mehr
+        st.session_state[_key] = C.SPRINT_OPEN
+
+
+def sprint_label(name):
+    return "(offen)" if name == C.SPRINT_OPEN else name
+
+
+period_from, period_to, period_none = st.columns([2, 2, 3])
+sprint_from = period_from.selectbox(
+    "Zeitraum: von Sprint", sprint_options, key="sprint_from", format_func=sprint_label,
+    help="Schränkt die Datengrundlage auf die Tickets ein, deren Sprint im Zeitraum liegt (beide Grenzen eingeschlossen; offen = vom ersten bzw. bis zum letzten Sprint). Es zählt der Sprint, den auch die Ebene "
+         "Sprint nutzt: bei mehreren der letzte, bei Sub-Tasks ohne eigenen Sprint der des übergeordneten Tickets. Die Reihenfolge ist die natürliche der Namen (Sprint 2 vor Sprint 10). Nicht gespeichert in der Adresszeile.")
+sprint_to = period_to.selectbox("bis Sprint", sprint_options, key="sprint_to", format_func=sprint_label)
+period_active = sprint_from != C.SPRINT_OPEN or sprint_to != C.SPRINT_OPEN
+sprint_none = period_none.toggle(
+    "Tickets ohne Sprint mitzählen", key="sprint_none", disabled=not period_active,
+    help="Im eingeschränkten Zeitraum zählen Tickets ohne Sprint (z. B. Backlog) sonst nicht. Ohne Einschränkung zählen alle.")
 view_left, view_right = st.columns(2)
 with view_left:
     dimension = st.selectbox("Ebene", C.DIMENSIONS, key="dimension", help="Wonach die Tickets zusammengefasst werden. Tickets mit mehreren Werten (Labels, Komponenten) zählen anteilig.")
 with view_right:
     dimension2 = st.selectbox("Zweite Ebene (Kreuztabelle)", C.DIMENSIONS_2, key="dimension2", help="Zeigt zusätzlich den Fortschritt je Kombination beider Ebenen.")
 
+max_level = A.max_level(issues)
+level = 1
+if C.DIM_LEVEL in (dimension, dimension2):
+    if st.session_state.get("level", 1) > max_level:
+        st.session_state["level"] = 1
+    level = st.selectbox(
+        "Hierarchiestufe", list(range(1, max_level + 1)), key="level", format_func=lambda n: f"Stufe {n}" + (" (oberste)" if n == 1 else ""),
+        help="Auf welcher Stufe des Ticket-Baums zusammengefasst wird: Stufe 1 ist die oberste (z. B. Initiative oder Epic ohne Eltern), Stufe 2 die darunter und so weiter. Ein Ticket, das höher steht, "
+             "bekommt „(keine Stufe n)“; ein Ticket auf genau dieser Stufe bildet eine eigene Gruppe.")
+
 settings = Settings(scheme=scheme, custom=custom, weight_mode=weight_mode, unest_rule=unest_rule, count_level=count_level, blend=blend,
-                    dimension=dimension, dimension2=dimension2, root=root)
+                    dimension=dimension, dimension2=dimension2, root=root, sprint_from=sprint_from, sprint_to=sprint_to, include_no_sprint=sprint_none, level=level)
 as_of = C.SAMPLE_TODAY
 a = analyse(issues, settings, as_of)
 
@@ -161,6 +191,13 @@ if root != C.ROOT_ALL:
     in_scope = len(A.subtree_keys(issues, root))
     st.info(f"Die Auswertung ist auf **{root_label(root).lstrip('↳ ')}** und alles darunter beschränkt: {in_scope} von {len(issues)} Tickets, davon {a.n_atoms} zählende. "
             "Kennzahlen, Diagramme, Tabellen, Zusammenfassung und Sensitivität gelten nur für diesen Teilbaum.")
+if period_active:
+    span = f"{sprint_from or 'Anfang'} bis {sprint_to or 'Ende'}"          # Sprint-Namen tragen „Sprint“ meist selbst
+    if a.n_atoms == 0:
+        st.warning(f"Im Zeitraum {span} liegt kein zählendes Ticket (Anfang hinter Ende oder keine Tickets in diesen Sprints).")
+    else:
+        st.info(f"Zeitraum **{span}**" + (", einschließlich der Tickets ohne Sprint" if sprint_none else "") + f": {a.n_atoms} zählende Tickets, {a.n_outside} außerhalb des Zeitraums. "
+                "Kennzahlen, Diagramme, Tabellen, Zusammenfassung und Sensitivität gelten nur für diese Tickets; der Verlauf zeigt ebenfalls nur sie.")
 
 def na(x, fmt):
     """NaN (kein Gewicht) als Strich zeigen."""
@@ -238,6 +275,14 @@ def show_table(rows, key, formats=None, file_name="tabelle"):
         config["Wirkung"] = st.column_config.TextColumn(width="large")
     st.dataframe(rows, hide_index=True, width="stretch", column_config=config, key=f"df_{key}")
     st.download_button("⬇️ Als CSV", rows_to_csv(rows), file_name=f"{file_name}.csv", mime="text/csv", key=f"csv_{key}")
+    with st.expander("📋 In Jira oder Confluence einfügen"):
+        wiki_tab, html_tab = st.tabs(["Wiki-Markup", "Tabelle zum Kopieren"])
+        with wiki_tab:
+            st.caption("Für Textfelder in Jira (Beschreibung, Kommentar im klassischen Editor) und für Confluence über „Einfügen → Markup“ (Wiki-Markup). Das Kopiersymbol oben rechts im Feld kopiert alles.")
+            st.code(T.rows_to_wiki(rows, formats), language=None)
+        with html_tab:
+            st.caption("Die Tabelle unten markieren, kopieren und in Confluence oder ein Jira-Textfeld einfügen: Sie wird als Tabelle mit Kopfzeile übernommen.")
+            st.html(T.rows_to_html(rows, formats))
 
 
 tab_group, tab_status, tab_contrib, tab_overview, tab_month, tab_quality = st.tabs(
@@ -307,6 +352,10 @@ verbindet sich nicht mit Jira; eigene Tickets kann sie nicht auswerten.
 
 **Wie Ebenen entstehen.** Das Epic eines Tickets folgt der Elternkette bis zu einem Ticket vom Typ Epic. Sprint, Komponente und Release erbt ein Ticket ohne eigenen Wert vom
 übergeordneten Ticket (Sub-Tasks). Bei mehreren Sprints zählt der letzte. Labels, Komponenten und Releases mit mehreren Werten teilen das Ticket gleichmäßig auf.
+
+**Zeitraum und Hierarchiestufe.** „Zeitraum: von Sprint … bis Sprint …“ schränkt die Datengrundlage auf die Tickets ein, deren Sprint in diesem Bereich liegt (Grenzen eingeschlossen). Es zählt der Sprint der Ebene Sprint: bei mehreren Sprints der letzte, bei Sub-Tasks ohne eigenen der des übergeordneten Tickets; die Reihenfolge ist die natürliche der Namen (Sprint 2 vor Sprint 10). Tickets ohne Sprint zählen im eingeschränkten Zeitraum nur mit dem Schalter. Der Median für ungeschätzte Tickets, alle Kennzahlen, Tabellen, die Zusammenfassung, die Sensitivität und der Verlauf beziehen sich dann nur auf die Tickets im Zeitraum; im Hierarchiegraphen erscheinen die übrigen grau. Die Ebene „Hierarchiestufe“ fasst auf eine Stufe des Ticket-Baums zusammen (Stufe 1 = oberste, Stufe 2 darunter, …): Gewicht und Fortschritt einer Gruppe sind die Summe und der gewichtete Fortschritt aller zählenden Tickets darunter, ein Ticket, das höher steht, bekommt „(keine Stufe n)“.
+
+**Einfügen in Jira und Confluence.** Unter jeder Tabelle bietet „In Jira oder Confluence einfügen“ das Wiki-Markup (Kopiersymbol im Feld; für Jira-Textfelder und Confluence über Einfügen → Markup) und dieselbe Tabelle als HTML zum Markieren und Kopieren.
 
 **Teilprojekt und Hierarchiegraph.** Die Auswahl „Teilprojekt“ setzt ein Ticket zur Wurzel: Gerechnet wird nur mit den Tickets der Zählebene, die dieses Ticket selbst oder (über beliebig viele Ebenen) darunter sind, z. B. eine Initiative, ein Epic oder eine Story mit ihren Sub-Tasks. Der Median für ungeschätzte Tickets und alle Kennzahlen, Tabellen, Diagramme, die Zusammenfassung und die Sensitivität beziehen sich dann auf diesen Teilbaum. Der Hierarchiegraph zeigt den Baum von links nach rechts; ein Knoten trägt die Summe der zählenden Tickets darunter. Bei mehr als 250 Knoten wird die tiefste Ebene zusammengefasst; ein Teilprojekt als Wurzel zeigt dann mehr Tiefe. Eltern-Verweise, die im Kreis laufen, werden je Ticket nur einmal gezählt.
 """

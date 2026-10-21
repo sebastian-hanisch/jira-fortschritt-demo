@@ -213,6 +213,66 @@ def _inherited(by_key: dict[str, Issue], issue: Issue, getter):
     return getter(parent) if parent is not None else value
 
 
+def ticket_sprint(by_key: dict[str, Issue], t: Issue) -> str:
+    """Der Sprint eines Tickets: bei mehreren der letzte, bei keinem der des übergeordneten Tickets (wie bei der Ebene Sprint); leer ohne Sprint."""
+    sprints = _inherited(by_key, t, lambda x: x.sprints)
+    return sprints[-1] if sprints else ""
+
+
+def sprint_order(issues) -> list[str]:
+    """Alle Sprints der Tickets in natürlicher Reihenfolge (Sprint 2 vor Sprint 10): die Reihenfolge, in der „von … bis …“ gilt."""
+    by_key = {i.key: i for i in issues}
+    return sorted({ticket_sprint(by_key, t) for t in issues} - {""}, key=natural_key)
+
+
+def filter_sprints(issues, atoms: list[int], first: str = C.SPRINT_OPEN, last: str = C.SPRINT_OPEN, include_none: bool = False) -> list[int]:
+    """Zeitraum der Auswertung: nur Atome, deren Sprint zwischen `first` und `last` liegt (beide eingeschlossen, offen = bis zum ersten bzw. letzten Sprint). Ohne beide Grenzen
+    bleibt alles. Atome ohne Sprint bleiben nur mit `include_none`. Ein Sprint, den es nicht gibt, ist ein Fehler; `first` hinter `last` ergibt nichts."""
+    if first == C.SPRINT_OPEN and last == C.SPRINT_OPEN:
+        return list(atoms)
+    order = sprint_order(issues)
+    for name in (first, last):
+        if name != C.SPRINT_OPEN and name not in order:
+            raise ValueError(f"unbekannter Sprint {name!r}")
+    lo = order.index(first) if first != C.SPRINT_OPEN else 0
+    hi = order.index(last) if last != C.SPRINT_OPEN else len(order) - 1
+    by_key = {i.key: i for i in issues}
+    keep = []
+    for i in atoms:
+        sprint = ticket_sprint(by_key, issues[i])
+        if (sprint == "" and include_none) or (sprint != "" and lo <= order.index(sprint) <= hi):
+            keep.append(i)
+    return keep
+
+
+def hierarchy_chains(issues) -> list[list[int]]:
+    """Je Ticket die Kette der Tickets von der obersten Stufe bis zu ihm selbst (Indizes); Zyklen und fehlende Eltern enden an der Stelle, an der der Baum aufhört."""
+    chains: list[list[int]] = [[] for _ in issues]
+    for i, _, parent in tree_order(issues):
+        chains[i] = (chains[parent] if parent >= 0 else []) + [i]
+    return chains
+
+
+def max_level(issues) -> int:
+    """Tiefste vorkommende Hierarchiestufe (1 = oberste Stufe), höchstens `C.MAX_LEVELS`."""
+    return min(max((len(c) for c in hierarchy_chains(issues)), default=1), C.MAX_LEVELS)
+
+
+def level_labels(issues, atoms, level: int) -> list[str]:
+    """Gruppe je Atom auf der Hierarchiestufe `level` (1 = oberste Stufe): das Ticket der Kette auf dieser Stufe, bei einem Atom auf genau dieser Stufe es selbst. Ein Atom, das höher
+    steht, bekommt „(keine Stufe n)“."""
+    chains = hierarchy_chains(issues)
+    out = []
+    for i in atoms:
+        chain = chains[i]
+        if len(chain) >= level:
+            t = issues[chain[level - 1]]
+            out.append(f"{t.key}: {t.summary}" if t.summary else t.key)
+        else:
+            out.append(f"(keine Stufe {level})")
+    return out
+
+
 def group_labels(by_key: dict[str, Issue], t: Issue, epic_key: str, epic_names: dict[str, str], dim: str) -> list[str]:
     """Gruppenbezeichnungen eines Tickets in der Ebene `dim` (eine, bei Mehrfachwerten mehrere)."""
     if dim == C.DIM_ALL:
@@ -243,12 +303,15 @@ def group_labels(by_key: dict[str, Issue], t: Issue, epic_key: str, epic_names: 
     raise ValueError(f"unbekannte Ebene {dim!r}")
 
 
-def assign_groups(issues, atoms, dim: str) -> Assignment:
-    """Ordnet jedes Atom den Gruppen der Ebene `dim` zu."""
+def assign_groups(issues, atoms, dim: str, level: int = 1) -> Assignment:
+    """Ordnet jedes Atom den Gruppen der Ebene `dim` zu (bei der Ebene Hierarchiestufe die Stufe `level`)."""
     epics = epic_of(issues)
     epic_names = {i.key: i.summary or i.key for i in issues if i.is_epic}
     by_key = {i.key: i for i in issues}
-    per_atom = [group_labels(by_key, issues[i], epics[i], epic_names, dim) for i in atoms]
+    if dim == C.DIM_LEVEL:
+        per_atom = [[label] for label in level_labels(issues, atoms, level)]
+    else:
+        per_atom = [group_labels(by_key, issues[i], epics[i], epic_names, dim) for i in atoms]
     labels = tuple(sorted({g for gs in per_atom for g in gs}, key=natural_key))
     index = {g: n for n, g in enumerate(labels)}
     a_idx, g_idx, share = [], [], []
@@ -423,9 +486,11 @@ class TreeGraph:
     hidden: np.ndarray        # Zahl der Tickets darunter, die nicht gezeichnet werden (zusammengefasste Ebene)
     n_total: int              # Knoten vor dem Zusammenfassen
     shown_depth: int          # tiefste gezeichnete Ebene
+    ignored: np.ndarray | None = None      # Tickets außerhalb des Zeitraums: zählen nicht, nichts messbar
 
 
-def tree_graph(issues, atoms, w: np.ndarray, c: np.ndarray, credit_of: dict[str, float], root: str = C.ROOT_ALL, max_nodes: int = C.GRAPH_MAX_NODES) -> TreeGraph:
+def tree_graph(issues, atoms, w: np.ndarray, c: np.ndarray, credit_of: dict[str, float], root: str = C.ROOT_ALL, max_nodes: int = C.GRAPH_MAX_NODES,
+               excluded: frozenset[int] = frozenset()) -> TreeGraph:
     """Gewicht und Fortschritt je Knoten des Hierarchiebaums. Ein Knoten trägt die Summe seiner Atome (er selbst, falls er eins ist, und alle darunter), der Fortschritt ist
     die gewichtete Gutschrift dieser Summe. Ein Blatt ohne Gewicht zeigt die Gutschrift seines Status (z. B. Sub-Tasks, wenn Stories zählen); alles andere ohne Gewicht bleibt
     leer. Ohne `root` steht ein Knoten „Projekt“ über allen Wurzeln. Über `max_nodes` hinaus wird die tiefste Ebene so lange zusammengefasst, bis der Graph passt."""
@@ -483,7 +548,9 @@ def tree_graph(issues, atoms, w: np.ndarray, c: np.ndarray, credit_of: dict[str,
     progress, weight, hidden = [], [], []
     for p in keep:
         weight.append(float(wsum[p]))
-        if wsum[p] > 0:
+        if node_issue[p] in excluded:
+            progress.append(float("nan"))
+        elif wsum[p] > 0:
             progress.append(float(csum[p] / wsum[p]))
         elif p not in kept_kids and size[p] == 1 and node_issue[p] >= 0 and not issues[node_issue[p]].is_epic:
             progress.append(float(credit_of.get(issues[node_issue[p]].status, np.nan)))
@@ -493,4 +560,4 @@ def tree_graph(issues, atoms, w: np.ndarray, c: np.ndarray, credit_of: dict[str,
     return TreeGraph(
         tuple(keys[p] for p in keep), tuple(titles[p] for p in keep), tuple(types[p] for p in keep), tuple(statuses[p] for p in keep), np.array([depth[p] for p in keep]), np.array([y[p] for p in keep]),
         np.array([slot[parent[p]] if parent[p] >= 0 else -1 for p in keep], dtype=int), np.array(weight), np.array(progress), np.array([is_atom[p] for p in keep]),
-        np.array([p not in kept_kids for p in keep]), np.array(hidden, dtype=int), n, shown_depth)
+        np.array([p not in kept_kids for p in keep]), np.array(hidden, dtype=int), n, shown_depth, np.array([node_issue[p] in excluded for p in keep]))
