@@ -19,16 +19,6 @@ def _atoms(mini):
 
 # ---------------------------------------------------------------- Status und Gutschriften
 
-def test_normalize_category_maps_keys_and_names_in_both_languages():
-    assert [A.normalize_category(t) for t in ("new", "To Do", "Zu erledigen", "done", "Erledigt", "indeterminate", "In Progress", "", "Banane")] == [
-        "new", "new", "new", "done", "done", "indeterminate", "indeterminate", "indeterminate", "indeterminate"]
-
-
-def test_category_from_status_name_is_the_fallback_without_a_category_column():
-    assert A.category_from_status_name("Closed") == "done" and A.category_from_status_name("Backlog") == "new"
-    assert A.category_from_status_name("In Review") == "indeterminate" and A.category_from_status_name("Fertig") == "done"
-
-
 def test_scheme_credits_by_hand():
     assert [A.scheme_credit(C.SCHEME_DONE, s, c) for s, c in (("To Do", "new"), ("In Review", "indeterminate"), ("Done", "done"))] == [0.0, 0.0, 1.0]
     assert [A.scheme_credit(C.SCHEME_LINEAR, s, c) for s, c in (("To Do", "new"), ("In Review", "indeterminate"), ("Done", "done"))] == [0.0, 0.5, 1.0]

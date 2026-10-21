@@ -25,28 +25,28 @@ def _in_readme(text):
 
 
 def test_default_project_size():
-    assert (len(DEFAULT), sum(i.is_epic for i in DEFAULT), sum(i.is_subtask for i in DEFAULT)) == (88, 6, 32)
+    assert (len(DEFAULT), sum(i.is_epic for i in DEFAULT), sum(i.is_subtask for i in DEFAULT)) == (78, 6, 28)
     a = ev.analyse(DEFAULT, ev.Settings())
-    assert (a.n_atoms, a.weight, a.n_unestimated) == (50, 211.0, 6)
-    for text in ("88 Tickets", "6 Epics", "32 Sub-Tasks", "50 Stories, Tasks und Bugs", "211 Story Points", "6 davon ungeschätzt"):
+    assert (a.n_atoms, a.weight, a.n_unestimated) == (44, 177.0, 7)
+    for text in ("78 Tickets", "6 Epics", "28 Sub-Tasks", "44 Stories, Tasks und Bugs", "177 Story Points", "7 davon ungeschätzt"):
         _in_readme(text)
 
 
 def test_default_progress_under_each_preset():
     got = {name: ev.analyse(DEFAULT, ev.Settings(**p)) for name, p in C.PRESETS.items()}
     standard, strict, workflow = (got[n] for n in C.PRESETS)
-    assert _pct(standard.progress) == "48,1 %" and _pct(strict.progress) == "37,4 %" and _pct(workflow.progress) == "56,4 %"
-    assert _pct(standard.progress_count) == "40,0 %" and _pct(standard.progress_done) == "37,4 %"
-    for text in ("48,1 %", "37,4 %", "56,4 %", "40,0 %"):
+    assert _pct(standard.progress) == "54,0 %" and _pct(strict.progress) == "43,5 %" and _pct(workflow.progress) == "62,0 %"
+    assert _pct(standard.progress_count) == "52,3 %" and _pct(standard.progress_done) == "43,5 %"
+    for text in ("54,0 %", "43,5 %", "62,0 %", "52,3 %"):
         _in_readme(text)
 
 
 def test_default_sensitivity_range():
     rows = ev.sensitivity(DEFAULT, ev.Settings())
     values = [r["progress"] for r in rows]
-    assert _pct(min(values)) == "37,4 %" and _pct(max(values)) == "54,4 %"
-    assert ev.de(100 * (max(values) - min(values))) == "16,9"
-    _in_readme("16,9 Prozentpunkte")
+    assert _pct(min(values)) == "43,5 %" and _pct(max(values)) == "68,0 %"
+    assert ev.de(100 * (max(values) - min(values))) == "24,5"
+    _in_readme("24,5 Prozentpunkte")
 
 
 def test_linear_minus_only_done_over_the_fixed_projects():
@@ -55,8 +55,8 @@ def test_linear_minus_only_done_over_the_fixed_projects():
         s = make_sample(C.DEFAULT_N_EPICS, seed)
         gaps.append(100 * (ev.analyse(s, ev.Settings()).progress - ev.analyse(s, ev.Settings(scheme=C.SCHEME_DONE)).progress))
     assert len(gaps) == 10
-    assert (ev.de(statistics.median(gaps)), ev.de(min(gaps)), ev.de(max(gaps))) == ("6,9", "4,2", "10,2")
-    for text in ("10 feste Beispielprojekte", "Median 6,9 Prozentpunkte", "4,2 bis 10,2"):
+    assert (ev.de(statistics.median(gaps)), ev.de(min(gaps)), ev.de(max(gaps))) == ("7,2", "1,3", "11,5")
+    for text in ("10 feste Beispielprojekte", "Median 7,2 Prozentpunkte", "1,3 bis 11,5"):
         _in_readme(text)
 
 
@@ -66,25 +66,20 @@ def test_sensitivity_spread_over_the_fixed_projects():
         s = make_sample(C.DEFAULT_N_EPICS, seed)
         v = [r["progress"] for r in ev.sensitivity(s, ev.Settings())]
         spreads.append(100 * (max(v) - min(v)))
-    assert (ev.de(statistics.median(spreads)), ev.de(min(spreads)), ev.de(max(spreads))) == ("13,9", "8,8", "18,4")
-    for text in ("Median 13,9 Prozentpunkte", "8,8 bis 18,4"):
+    assert (ev.de(statistics.median(spreads)), ev.de(min(spreads)), ev.de(max(spreads))) == ("17,0", "8,0", "19,3")
+    for text in ("Median 17,0 Prozentpunkte", "8,0 bis 19,3"):
         _in_readme(text)
 
 
 def test_blend_lifts_the_workflow_scheme_on_the_default_project():
     plain = ev.analyse(DEFAULT, ev.Settings(scheme=C.SCHEME_WORKFLOW)).progress
     blended = ev.analyse(DEFAULT, ev.Settings(scheme=C.SCHEME_WORKFLOW, blend=True)).progress
-    assert _pct(plain) == "54,4 %" and _pct(blended) == "56,4 %"
-    _in_readme("54,4 % auf 56,4 %")
+    assert _pct(plain) == "61,4 %" and _pct(blended) == "62,0 %"
+    _in_readme("61,4 % auf 62,0 %")
 
 
 def test_readme_numbers_with_a_percent_sign_are_all_covered_by_a_claim():
     """Rückwärtsprobe: keine Prozentzahl im README, die kein Test oben kennt."""
-    covered = {"48,1 %", "37,4 %", "56,4 %", "40,0 %", "54,4 %", "50 %", "100 %", "0 %", "80 %", "90 %", "40 %"}
+    covered = {"54,0 %", "43,5 %", "62,0 %", "52,3 %", "61,4 %", "68,0 %", "50 %", "100 %", "0 %", "80 %", "90 %", "40 %"}
     found = set(re.findall(r"\d+(?:,\d+)? %", README))
     assert found <= covered, sorted(found - covered)
-
-
-def test_limits_stated_in_the_readme_match_the_constants():
-    assert C.MAX_IMPORT_ISSUES == 5000
-    _in_readme("5000 Tickets")

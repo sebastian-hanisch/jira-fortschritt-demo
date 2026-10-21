@@ -83,8 +83,8 @@ def test_bounds_of_the_status_edit_clamp_inclusively():
     assert A.apply_credit_edits(base, {0: {"Gewicht (%)": None}}) == base
 
 
-def test_worst_case_at_the_import_limit_finishes_and_stays_consistent():
-    """Obergrenze von MAX_IMPORT_ISSUES Tickets mit allen Ebenen, Kreuztabelle, Sub-Task-Mischung und Sensitivität (kein Zeitvergleich: das Pytest-Limit ist das Netz)."""
+def test_worst_case_with_five_thousand_tickets_finishes_and_stays_consistent():
+    """Größtfall mit 5000 Tickets mit allen Ebenen, Kreuztabelle, Sub-Task-Mischung und Sensitivität (kein Zeitvergleich: das Pytest-Limit ist das Netz)."""
     import dataclasses
 
     from jira_scenario import make_sample
@@ -92,8 +92,8 @@ def test_worst_case_at_the_import_limit_finishes_and_stays_consistent():
     for k in range(60):
         for i in make_sample(C.N_EPICS_MAX, k):
             big.append(dataclasses.replace(i, key=f"{i.key}-{k}", parent=f"{i.parent}-{k}" if i.parent else ""))
-    big = tuple(big[:C.MAX_IMPORT_ISSUES])
-    assert len(big) == C.MAX_IMPORT_ISSUES
+    big = tuple(big[:5000])
+    assert len(big) == 5000
     for dim in C.DIMENSIONS:
         a = ev.analyse(big, ev.Settings(dimension=dim, dimension2=C.DIM_LABEL if dim != C.DIM_LABEL else C.DIM_COMPONENT, blend=True))
         assert ev.check_consistency(a) == [], dim

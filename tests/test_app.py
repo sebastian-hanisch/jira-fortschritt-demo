@@ -113,15 +113,6 @@ def test_disabled_controls_follow_their_condition():
     assert at.selectbox(key="unest_rule").disabled
     at.selectbox(key="count_level").set_value(C.LEVEL_SUBTASKS).run(timeout=TIMEOUT)
     assert at.toggle(key="blend").disabled
-    at.radio(key="source").set_value(C.SOURCE_FILE).run(timeout=TIMEOUT)
-    assert at.slider(key="n_epics").disabled and at.number_input(key="seed_input").disabled
-
-
-def test_file_source_without_a_file_asks_for_one_and_stops():
-    at = _fresh_app()
-    at.radio(key="source").set_value(C.SOURCE_FILE).run(timeout=TIMEOUT)
-    _ok(at)
-    assert any("Bitte eine Datei wählen" in i.value for i in at.info) and not at.metric
 
 
 def test_custom_credits_change_the_result_and_the_scheme():
@@ -146,58 +137,10 @@ def test_permalink_is_clamped_and_unknown_values_are_ignored():
     assert at.radio(key="weight_mode").value == C.WEIGHT_COUNT and at.toggle(key="blend").value is True
 
 
-def test_the_custom_scheme_and_the_source_are_not_written_to_the_address_bar():
+def test_the_custom_scheme_is_not_written_to_the_address_bar():
     at = _fresh_app()
     at.selectbox(key="scheme").set_value(C.SCHEME_CUSTOM).run(timeout=TIMEOUT)
-    assert "src" not in at.query_params and at.query_params["schema"] != C.SCHEME_CUSTOM
-
-
-# ---------------------------------------------------------------- Datei-Pfad (echter Upload über AppTest)
-
-def _upload(name, data, mime="text/csv"):
-    at = _fresh_app()
-    at.radio(key="source").set_value(C.SOURCE_FILE).run(timeout=TIMEOUT)
-    at.file_uploader(key="upload_0").set_value((name, data, mime)).run(timeout=TIMEOUT)
-    return at
-
-
-def test_uploaded_csv_gives_the_same_numbers_as_the_generated_sample():
-    import jira_evaluation as ev
-    import jira_import as J
-    from jira_scenario import make_sample
-
-    sample = make_sample(C.DEFAULT_N_EPICS, C.DEFAULT_SEED)
-    at = _upload("export.csv", J.to_csv(sample))
-    _ok(at)
-    want = ev.analyse(sample, ev.Settings())
-    assert at.metric[0].value == ev.pct(want.progress) and at.metric[2].value == ev.pct(want.progress_count)
-    assert not any(w.value.startswith("Keine") for w in at.warning)          # keine Meldung über fehlende Spalten (die Upload-Warnung bleibt)
-
-
-def test_uploaded_csv_with_missing_columns_warns_instead_of_guessing():
-    at = _upload("export.csv", b"Issue key,Status\nA-1,Done\nA-2,To Do\nA-3,In Progress\n")
-    _ok(at)
-    assert any("Story-Point-Spalte" in w.value for w in at.warning)
-    # kein Ticket geschätzt, Regel „Median“ ohne geschätztes Ticket = Gewicht 1 je Ticket: linear (1 + 0 + 0,5) / 3
-    assert at.metric[0].value == "50,0 %"
-
-
-def test_uploaded_garbage_shows_an_error_and_stops():
-    at = _upload("kaputt.csv", b"Spalte A,Spalte B\n1,2\n")
-    assert not at.exception
-    assert any("Issue key" in e.value or "Status" in e.value for e in at.error) and not at.metric
-    at = _upload("kaputt.json", b"{nicht json", "application/json")
-    assert not at.exception and any("gültige JSON" in e.value for e in at.error)
-
-
-def test_uploaded_json_response_is_read():
-    import json
-
-    raw = {"issues": [{"key": "P-1", "fields": {"issuetype": {"name": "Story"}, "status": {"name": "Done", "statusCategory": {"key": "done"}}, "customfield_10016": 5}},
-                      {"key": "P-2", "fields": {"issuetype": {"name": "Story"}, "status": {"name": "To Do", "statusCategory": {"key": "new"}}, "customfield_10016": 5}}]}
-    at = _upload("antwort.json", json.dumps(raw).encode(), "application/json")
-    _ok(at)
-    assert at.metric[0].value == "50,0 %" and at.metric[1].value == "50,0 %"
+    assert at.query_params["schema"] != C.SCHEME_CUSTOM
 
 
 # ---------------------------------------------------------------- Tabellen
@@ -230,70 +173,38 @@ def test_tables_on_the_subtask_level_with_no_weight_do_not_crash():
     _ok(at)
 
 
-def test_uploaded_project_without_resolution_dates_warns_in_the_month_tab():
-    at = _upload("export.csv", b"Issue key,Status,Story Points\nA-1,Done,3\nA-2,To Do,2\n")
-    _ok(at)
-    assert any("kein lesbares Lösungsdatum" in w.value for w in at.warning)
+# ---------------------------------------------------------------- Beispieldaten: kein Upload, Ticketliste, kein Zugang zu Jira
 
-
-# ---------------------------------------------------------------- Werkzeug: Upload ohne Spuren, kein Zugang zu Jira
-
-def test_sources_are_only_sample_and_file():
+def test_there_is_no_upload_and_no_choice_of_source():
     at = _fresh_app()
-    assert list(at.radio(key="source").options) == [C.SOURCE_SAMPLE, C.SOURCE_FILE]
+    assert not at.get("file_uploader") and not [r for r in at.radio if r.key == "source"]
+    page = " ".join(str(x.value) for x in at.markdown) + " ".join(str(x.value) for x in at.caption)
+    assert "hochladen" not in page.lower() and "Die Demo liest keine Jira-Datei" in page
 
 
-def test_the_notice_and_both_example_downloads_are_shown_before_an_upload():
-    at = _fresh_app()
-    at.radio(key="source").set_value(C.SOURCE_FILE).run(timeout=TIMEOUT)
-    _ok(at)
-    assert any("Bitte vor dem Hochladen lesen" in w.value and "Streamlit Community Cloud" in w.value for w in at.warning)
-    labels = [d.proto.label for d in at.get("download_button")]
-    assert labels == ["⬇️ Beispiel als CSV", "⬇️ Beispiel als JSON"]
-
-
-def test_sample_source_offers_csv_and_json_examples():
-    at = _fresh_app()
-    labels = [d.proto.label for d in at.get("download_button")]
-    assert labels[:2] == ["⬇️ Beispiel als CSV", "⬇️ Beispiel als JSON"]
-
-
-def test_uploaded_json_example_gives_the_same_numbers_as_the_generated_sample():
-    import jira_evaluation as ev
-    import jira_import as J
+def test_the_ticket_list_shows_every_ticket_of_the_sample_and_offers_it_as_csv():
     from jira_scenario import make_sample
 
-    sample = make_sample(C.DEFAULT_N_EPICS, C.DEFAULT_SEED)
-    at = _upload("beispiel.json", J.to_json(sample), "application/json")
+    at = _fresh_app()
     _ok(at)
-    want = ev.analyse(sample, ev.Settings())
-    assert at.metric[0].value == ev.pct(want.progress) and at.metric[2].value == ev.pct(want.progress_count)
+    tickets = next(d for d in at.dataframe if len(d.value) == len(make_sample(C.DEFAULT_N_EPICS, C.DEFAULT_SEED)))
+    assert list(tickets.value.columns)[:4] == ["Schlüssel", "Typ", "Titel", "Status"] and tickets.value["Schlüssel"].is_unique
+    assert any(e.label == "🎫 Die Tickets des Beispielprojekts ansehen" for e in at.expander)
 
 
-def test_assignee_names_are_replaced_by_default_and_can_be_kept():
-    import jira_import as J
+def test_the_headline_numbers_follow_the_sample_size_and_seed():
+    import jira_evaluation as ev
+    from jira_scenario import make_sample
 
-    raw = b"Issue key,Status,Story Points,Assignee\nA-1,Done,3,Maria Muster\nA-2,To Do,2,Max Beispiel\n"
-    at = _upload("export.csv", raw)
-    at.selectbox(key="dimension").set_value(C.DIM_ASSIGNEE).run(timeout=TIMEOUT)
+    at = _fresh_app()
+    at.slider(key="n_epics").set_value(3)
+    at.number_input(key="seed_input").set_value(11).run(timeout=TIMEOUT)
     _ok(at)
-    assert at.checkbox(key="pseudo").value is True and at.checkbox(key="pseudo").disabled      # gilt beim Laden, danach gesperrt
-    page = " ".join(str(x.value) for x in at.markdown) + " ".join(str(x.value) for x in at.caption) + " ".join(str(x.value) for x in at.info)
-    assert len(at.dataframe) >= 5
-    table_text = " ".join(t.value.to_string() for t in at.dataframe)
-    assert "Maria Muster" not in page + table_text and "Max Beispiel" not in page + table_text
-    assert "Person 1" in table_text or "Person 1" in page
-    at.button(key="clear_loaded").click().run(timeout=TIMEOUT)              # Daten löschen, Option ändern, erneut laden
-    at.checkbox(key="pseudo").set_value(False).run(timeout=TIMEOUT)
-    at.file_uploader(key="upload_2").set_value(("export.csv", raw, "text/csv")).run(timeout=TIMEOUT)
-    at.selectbox(key="dimension").set_value(C.DIM_ASSIGNEE).run(timeout=TIMEOUT)      # die Ansicht startet nach dem Löschen wieder mit den Standardwerten
-    _ok(at)
-    assert "Maria Muster" in " ".join(t.value.to_string() for t in at.dataframe)
-    assert J.pseudonymize_assignees(()) == ()
+    assert at.metric[0].value == ev.pct(ev.analyse(make_sample(3, 11), ev.Settings()).progress)
 
 
-def test_only_the_generated_sample_is_cached_never_uploaded_data():
-    """Datenschutz: st.cache_data hält Ergebnisse im Serverspeicher, auch sitzungsübergreifend. Gecacht werden darf nur die Erzeugung des Beispielprojekts."""
+def test_only_the_generation_of_the_sample_is_cached():
+    """st.cache_data hält Ergebnisse im Serverspeicher, auch sitzungsübergreifend: Gecacht wird nur die Erzeugung des Beispielprojekts."""
     import ast
 
     tree = ast.parse(open(APP_PATH, encoding="utf-8").read())
@@ -302,7 +213,7 @@ def test_only_the_generated_sample_is_cached_never_uploaded_data():
     assert "cache_resource" not in open(APP_PATH, encoding="utf-8").read()
 
 
-def test_the_app_has_no_connection_to_jira_and_no_network_library():
+def test_the_demo_has_no_connection_to_jira_and_no_network_library():
     import re
     from pathlib import Path
 

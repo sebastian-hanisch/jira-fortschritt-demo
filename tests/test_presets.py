@@ -41,8 +41,7 @@ def test_setting_specs_cover_every_preset_key_and_every_default_is_valid():
 
 def test_view_and_data_settings_do_not_count_for_the_preset_highlight():
     non_scenario = {k for k, s in P.SETTING_SPECS.items() if not s.szenario}
-    assert non_scenario == {"source", "n_epics", "seed_input", "dimension", "dimension2"}
-    assert not P.SETTING_SPECS["source"].permalink
+    assert non_scenario == {"n_epics", "seed_input", "dimension", "dimension2"}
 
 
 def test_custom_scheme_is_never_written_to_the_address_bar():

@@ -106,5 +106,4 @@ def test_daten_und_ansichtsregler_behalten_die_hervorhebung(state_key):
             regler.set_value(spec.hi if regler.value != spec.hi else spec.lo)
         at.run()
     assert not at.exception, [str(e) for e in at.exception]
-    if state_key != "source":                    # bei einer anderen Quelle bleibt die App stehen (Datei fehlt), die Seitenleiste ist trotzdem gezeichnet
-        assert [n for n, typ in _typen(at).items() if typ == "primary"] == [next(iter(C.PRESETS))]
+    assert [n for n, typ in _typen(at).items() if typ == "primary"] == [next(iter(C.PRESETS))]

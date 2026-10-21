@@ -19,6 +19,7 @@ class Settings:
     blend: bool = False
     dimension: str = C.DEFAULT_DIM
     dimension2: str = C.DEFAULT_DIM2
+    root: str = C.ROOT_ALL                               # Teilprojekt: nur dieses Ticket und alles darunter (leer = ganzes Projekt)
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class Analysis:
     stats: A.GroupStats
     cross: A.GroupStats | None
     hierarchy: A.Hierarchy
+    tree: A.TreeGraph
     burn: tuple
     atoms: tuple[int, ...]      # Indizes der Atome in der Ticketliste (Grundlage der Tabellen)
     w: np.ndarray               # Gewicht je Atom
@@ -63,7 +65,7 @@ def status_list(issues) -> list[tuple[str, str]]:
 
 def analyse(issues, settings: Settings, today: dt.date = C.SAMPLE_TODAY) -> Analysis:
     credit_of = A.status_credits(status_list(issues), settings.scheme, settings.custom)
-    atoms = A.select_atoms(issues, settings.count_level)
+    atoms = A.select_atoms(issues, settings.count_level, settings.root)
     w = A.atom_weights(issues, atoms, settings.weight_mode, settings.unest_rule)
     blend = settings.blend and settings.count_level == C.LEVEL_STORIES
     c = A.atom_credits(issues, atoms, credit_of, blend)
@@ -77,7 +79,7 @@ def analyse(issues, settings: Settings, today: dt.date = C.SAMPLE_TODAY) -> Anal
         second = A.assign_groups(issues, atoms, settings.dimension2)
         cross = A.aggregate(A.cross_assignment(first, second), w, c, done, unest)
     return Analysis(settings, credit_of, len(atoms), float(w.sum()), p_w, p_d, p_n, int(unest.sum()), stats, cross,
-                    A.hierarchy(issues, atoms, w, c), A.burn_up(issues, atoms, w, done, today), tuple(atoms), w, c, done, first)
+                    A.hierarchy(issues, atoms, w, c), A.tree_graph(issues, atoms, w, c, credit_of, settings.root), A.burn_up(issues, atoms, w, done, today), tuple(atoms), w, c, done, first)
 
 
 def sensitivity(issues, settings: Settings) -> list[dict]:

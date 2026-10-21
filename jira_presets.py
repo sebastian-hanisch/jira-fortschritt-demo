@@ -22,7 +22,6 @@ class SettingSpec:
 
 
 SETTING_SPECS = {
-    "source": SettingSpec("src", str, C.SOURCE_SAMPLE, options=C.SOURCES, permalink=False, szenario=False),
     "n_epics": SettingSpec("epics", int, C.DEFAULT_N_EPICS, C.N_EPICS_MIN, C.N_EPICS_MAX, szenario=False),
     "seed_input": SettingSpec("seed", int, C.DEFAULT_SEED, 0, C.SEED_MAX, szenario=False),
     "scheme": SettingSpec("schema", str, C.DEFAULT_SCHEME, options=C.SCHEMES, url_skip=(C.SCHEME_CUSTOM,)),

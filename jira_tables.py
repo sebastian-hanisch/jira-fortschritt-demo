@@ -162,6 +162,15 @@ def unestimated_tickets(issues, a: Analysis, limit: int = MAX_LIST_ROWS) -> tupl
     return rows, len(found)
 
 
+def ticket_rows(issues) -> list[dict]:
+    """Alle Tickets als Zeilen für die Tabelle „Die Tickets des Beispielprojekts“ (und ihren CSV-Download)."""
+    return [{
+        "Schlüssel": t.key, "Typ": t.type, "Titel": t.summary, "Status": t.status, "Kategorie": C.CATEGORY_LABEL[t.category], "Story Points": t.points, "Übergeordnet": t.parent,
+        "Sprint": ", ".join(t.sprints), "Komponente": ", ".join(t.components), "Label": ", ".join(t.labels), "Release": ", ".join(t.versions), "Bearbeiter": t.assignee,
+        "Team": t.team, "Bereich": t.area, "Priorität": t.priority, "Erstellt": t.created.isoformat() if t.created else "", "Gelöst": t.resolved.isoformat() if t.resolved else ""}
+        for t in issues]
+
+
 def rows_to_csv(rows: list[dict]) -> bytes:
     """CSV für Excel im deutschen Raum: Semikolon, Dezimalkomma, UTF-8 mit Kennung. Zahlen unverändert genau, leere Zellen für None, Semikolon in Text durch Komma ersetzt."""
     if not rows:
@@ -193,8 +202,11 @@ def summary_markdown(issues, a: Analysis, unit: str, as_of: dt.date) -> str:
     if s.weight_mode == C.WEIGHT_POINTS:
         assumptions.append(f"ungeschätzte Tickets {s.unest_rule}")
     assumptions += [f"Zählebene {s.count_level}", f"Sub-Task-Option {'an' if s.blend and s.count_level == C.LEVEL_STORIES else 'aus'}"]
-    lines = [
-        f"**Jira-Fortschritt** (Stand {as_of.strftime('%d.%m.%Y')})", "",
+    lines = [f"**Jira-Fortschritt** (Stand {as_of.strftime('%d.%m.%Y')})", ""]
+    if s.root != C.ROOT_ALL:
+        title = next((t.summary for t in issues if t.key == s.root and t.summary), "")
+        lines += [f"Teilprojekt: {s.root}{': ' + title if title else ''} und alles darunter", ""]
+    lines += [
         f"- Fortschritt (nach Status gewichtet): {_pct_or_dash(a.progress)}",
         f"- Nur Done: {_pct_or_dash(a.progress_done)} nach Gewicht, {_pct_or_dash(a.progress_count)} nach Ticketzahl",
         f"- Umfang: {a.n_atoms} Tickets ({a.n_unestimated} ohne Story Points), Gewicht {de(a.weight)} {unit}",

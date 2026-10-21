@@ -66,6 +66,12 @@ def o_labels(by_key, issue, dim):
         return list(issue.labels) or ["(ohne Label)"]
     if dim == C.DIM_ASSIGNEE:
         return [issue.assignee or "(nicht zugewiesen)"]
+    if dim == C.DIM_TEAM:
+        return [issue.team or "(ohne Team)"]
+    if dim == C.DIM_AREA:
+        return [issue.area or "(ohne Bereich)"]
+    if dim == C.DIM_PRIORITY:
+        return [issue.priority or "(ohne Priorität)"]
     if dim == C.DIM_TYPE:
         return [issue.type]
     return [issue.status]

@@ -198,3 +198,33 @@ def test_data_quality_resolution_on_the_creation_day_is_fine_and_done_subtasks_d
               Issue(key="B", type="Story", status="Done", category="done", points=1.0, parent="A"))
     got = {r["Prüfung"]: r["Anzahl"] for r in T.data_quality(issues, ev.analyse(issues, ev.Settings()))}
     assert got["Lösungsdatum vor Erstelldatum"] == 0 and got["Erledigt, aber Sub-Tasks offen"] == 0
+
+
+def test_ticket_rows_by_hand():
+    import datetime as dt
+
+    from jira_scenario import Issue
+
+    issues = (
+        Issue(key="E-1", summary="Suche", type="Epic", status="In Progress", category="indeterminate", team="", area="Nord", created=dt.date(2026, 6, 1)),
+        Issue(key="S-1", summary="Filter", type="Story", status="Done", category="done", points=3.0, parent="E-1", sprints=("Sprint 1", "Sprint 2"), components=("Backend",),
+              labels=("ux", "quick-win"), versions=("Release 1.0",), assignee="Person A", team="Team Alpha", area="Nord", priority="Hoch", created=dt.date(2026, 6, 2),
+              resolved=dt.date(2026, 6, 20)),
+        Issue(key="S-2"))
+    rows = T.ticket_rows(issues)
+    assert [r["Schlüssel"] for r in rows] == ["E-1", "S-1", "S-2"]
+    assert rows[1] == {
+        "Schlüssel": "S-1", "Typ": "Story", "Titel": "Filter", "Status": "Done", "Kategorie": "Erledigt", "Story Points": 3.0, "Übergeordnet": "E-1", "Sprint": "Sprint 1, Sprint 2",
+        "Komponente": "Backend", "Label": "ux, quick-win", "Release": "Release 1.0", "Bearbeiter": "Person A", "Team": "Team Alpha", "Bereich": "Nord", "Priorität": "Hoch",
+        "Erstellt": "2026-06-02", "Gelöst": "2026-06-20"}
+    assert rows[0]["Kategorie"] == "In Arbeit" and rows[0]["Story Points"] is None and rows[0]["Gelöst"] == "" and rows[0]["Sprint"] == "" and rows[0]["Erstellt"] == "2026-06-01"
+    assert rows[2]["Kategorie"] == "To Do" and rows[2]["Erstellt"] == ""
+
+
+def test_ticket_rows_cover_the_whole_sample_with_unique_keys():
+    from jira_scenario import make_sample
+
+    sample = make_sample(4, 2)
+    rows = T.ticket_rows(sample)
+    assert len(rows) == len(sample) and len({r["Schlüssel"] for r in rows}) == len(sample)
+    assert sum(r["Story Points"] is None for r in rows) == sum(t.points is None for t in sample)

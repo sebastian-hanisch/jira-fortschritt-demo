@@ -96,3 +96,55 @@ def build_sensitivity(rows):
     fig.update_layout(barmode="group")
     fig.update_yaxes(title_text="Gesamtfortschritt (%)", range=[0, 115])
     return _base(fig)
+
+
+def _node_hover(g, k: int, unit: str) -> str:
+    lines = [g.keys[k] + (f": {g.titles[k]}" if g.titles[k] else "")]
+    if g.types[k] or g.statuses[k]:
+        lines.append(" · ".join(x for x in (g.types[k], g.statuses[k]) if x))
+    lines.append("kein Gewicht" if g.weight[k] <= 0 else f"Gewicht {g.weight[k]:.1f} {unit}".replace(".", ","))
+    lines.append("kein Fortschritt messbar" if np.isnan(g.progress[k]) else f"Fortschritt {100 * g.progress[k]:.0f} %")
+    if not g.is_atom[k] and g.is_leaf[k] and g.weight[k] <= 0 and not np.isnan(g.progress[k]):
+        lines.append("zählt nicht selbst (Zählebene)")
+    if g.hidden[k]:
+        lines.append(f"{g.hidden[k]} Tickets darunter nicht gezeichnet")
+    return "<br>".join(lines)
+
+
+def build_tree_graph(g, unit: str):
+    """Hierarchiebaum von links nach rechts: Knotengröße = Gewicht (Summe der Atome darunter), Farbe = Fortschritt, Quadrat = fasst Tickets zusammen, Kreis = Blatt oder Ticket
+    ohne Kinder, grau = nichts messbar. Die Beschriftung zeigt den Schlüssel; alle Angaben stehen im Hover."""
+    n = len(g.keys)
+    xs, ys = [], []
+    for k in range(n):
+        q = int(g.parent[k])
+        if q >= 0:
+            mid = (g.x[q] + g.x[k]) / 2
+            xs += [g.x[q], mid, mid, g.x[k], None]
+            ys += [g.y[q], g.y[q], g.y[k], g.y[k], None]
+    fig = go.Figure(go.Scatter(x=xs, y=ys, mode="lines", line=dict(color="rgba(130,130,130,0.55)", width=1.2), hoverinfo="skip", showlegend=False))
+    top = float(g.weight.max()) if n else 0.0
+    size = np.array([9.0 if top <= 0 or g.weight[k] <= 0 else 9.0 + 25.0 * np.sqrt(g.weight[k] / top) for k in range(n)])
+    symbol = ["circle" if g.is_leaf[k] else "square" for k in range(n)]
+    label_all = n <= C.GRAPH_LABEL_MAX
+    text = [g.keys[k] if (label_all or not g.is_leaf[k]) else "" for k in range(n)]
+    place = ["middle right" if g.is_leaf[k] else "top center" for k in range(n)]        # Knoten mit Kindern: Schlüssel über den Knoten, damit er nicht auf der Linie zu den Kindern liegt
+    known = [k for k in range(n) if not np.isnan(g.progress[k])]
+    unknown = [k for k in range(n) if np.isnan(g.progress[k])]
+    if known:
+        fig.add_trace(go.Scatter(
+            x=[g.x[k] for k in known], y=[g.y[k] for k in known], mode="markers+text", text=[text[k] for k in known], textposition=[place[k] for k in known], textfont=dict(size=11),
+            marker=dict(size=[size[k] for k in known], symbol=[symbol[k] for k in known], color=[g.progress[k] for k in known], colorscale=C.COLOR_SCALE, cmin=0, cmax=1,
+                        line=dict(color="rgba(60,60,60,0.8)", width=1), colorbar=dict(title="Fortschritt", tickformat=".0%", nticks=5, len=0.5)),
+            hovertext=[_node_hover(g, k, unit) for k in known], hoverinfo="text", showlegend=False))
+    if unknown:
+        fig.add_trace(go.Scatter(
+            x=[g.x[k] for k in unknown], y=[g.y[k] for k in unknown], mode="markers+text", text=[text[k] for k in unknown], textposition=[place[k] for k in unknown], textfont=dict(size=11),
+            marker=dict(size=[size[k] for k in unknown], symbol=[symbol[k] for k in unknown], color="rgba(190,190,190,0.9)", line=dict(color="rgba(60,60,60,0.8)", width=1)),
+            hovertext=[_node_hover(g, k, unit) for k in unknown], hoverinfo="text", showlegend=False))
+    depth = int(g.x.max()) if n else 0
+    fig.update_xaxes(visible=False, range=[-0.4, depth + 1.8])
+    fig.update_yaxes(visible=False, autorange="reversed")
+    leaves = int(g.is_leaf.sum())
+    fig.update_layout(height=int(min(2400, max(300, 17 * leaves + 60))), margin=dict(l=10, r=10, t=10, b=10), plot_bgcolor="rgba(0,0,0,0)", showlegend=False)
+    return lock_axes(fig)
