@@ -1,5 +1,7 @@
 # Jira-Fortschritt: gewichtet über Status, Story Points und Ebenen – interaktive Streamlit-Demo
 
+**[→ Demo live ausprobieren](https://sebastianhanisch-jira-fortschritt-demo.streamlit.app/)**
+
 Fall-Demo auf der Website „Sebastian Hanisch – Operations Research und Machine Learning“ (Datenanalyse: Kennzahlen aus Ticketdaten und ihre Abhängigkeit von Annahmen). Die App rechnet an einem
 **erzeugten Beispielprojekt** (Tickets mit Status, Story Points, Sprints, Teams und Hierarchie, wie ein Jira-Export sie liefert) einen **gewichteten Projektfortschritt**: Jeder Status zählt mit einem wählbaren
 Anteil (To Do 0 %, in Arbeit 50 % oder eigene Werte, Done 100 %), jedes Ticket wiegt seine **Story Points** (oder 1), und das Ergebnis lässt sich über mehrere **Aggregationsebenen** zeigen: Gesamtprojekt, Epic,
